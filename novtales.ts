@@ -1,0 +1,241 @@
+import { fetchApi } from '@libs/fetch';
+import { Plugin } from '@/types/plugin';
+import { load as loadCheerio } from 'cheerio';
+import { defaultCover } from '@libs/defaultCover';
+import { NovelStatus } from '@libs/novelStatus';
+
+type CatalogueNovel = {
+  slug: string;
+  title: string;
+  published?: boolean;
+  coverUrl?: string;
+  altNames?: string[];
+  hearts?: number;
+  added?: number;
+};
+
+type NovelData = {
+  slug: string;
+  title: string;
+  author?: string;
+  coverUrl?: string;
+  synopsis?: string;
+  genres?: string[];
+  status?: string;
+  ratingAverage?: number;
+  chapterTotalPages: number;
+  chapterList: {
+    number: number;
+    title: string;
+    time?: string;
+    locked?: boolean;
+  }[];
+};
+
+// Next.js streams JSON text in several script elements. Decode the strings,
+// without executing site JavaScript, before extracting a balanced JSON value.
+function readPageData<T>(html: string, key: string): T {
+  const $ = loadCheerio(html);
+  let payload = '';
+  $('script').each((_, element) => {
+    const script = $(element).html() || '';
+    const chunks =
+      script.match(/self\.__next_f\.push\(\[1,("(?:\\.|[^"\\])*")\]\)/g) || [];
+    chunks.forEach(chunk => {
+      const encoded = chunk.slice(chunk.indexOf(',') + 1, -2);
+      payload += JSON.parse(encoded) as string;
+    });
+  });
+
+  const match = new RegExp('"' + key + '"\\s*:\\s*([\\[{])').exec(payload);
+  if (match) {
+    const start = match.index + match[0].length - 1;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < payload.length; index++) {
+      const char = payload[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+      } else if (char === '"') inString = true;
+      else if (char === '[' || char === '{') depth++;
+      else if (char === ']' || char === '}') {
+        depth--;
+        if (depth === 0)
+          return JSON.parse(payload.slice(start, index + 1)) as T;
+      }
+    }
+  }
+  throw new Error(
+    'NovTales: missing ' + key + ' data. The site layout may have changed.',
+  );
+}
+
+class NovTales implements Plugin.PagePlugin {
+  id = 'novtales';
+  name = 'NovTales';
+  icon = 'src/en/novtales/icon.png';
+  site = 'https://novtales.com';
+  version = '1.0.0';
+  filters = undefined;
+
+  private chapterPages: Record<string, number> = {};
+
+  resolveUrl(path: string): string {
+    if (path.startsWith(this.site + '/')) return path;
+    return this.site + (path.startsWith('/') ? path : '/' + path);
+  }
+
+  private novelPath(path: string): string {
+    return path.replace(/^https:\/\/novtales\.com/, '').split(/[?#]/)[0];
+  }
+
+  private async request(path: string): Promise<string> {
+    const response = await fetchApi(this.resolveUrl(path));
+    if (!response.ok) {
+      throw Object.assign(new Error('NovTales: HTTP ' + response.status), {
+        status: response.status,
+      });
+    }
+    const html = await response.text();
+    if (/Vercel Security Checkpoint|<title>Just a moment/i.test(html)) {
+      throw Object.assign(
+        new Error(
+          'NovTales: browser verification required. Open the source in WebView and try again.',
+        ),
+        { status: 403 },
+      );
+    }
+    return html;
+  }
+
+  private async catalogue(): Promise<CatalogueNovel[]> {
+    const html = await this.request('/explore');
+    const novels = readPageData<CatalogueNovel[]>(html, 'catalogue');
+    if (!Array.isArray(novels)) throw new Error('NovTales: invalid catalogue.');
+    return novels.filter(
+      novel => novel.published !== false && novel.slug && novel.title,
+    );
+  }
+
+  private results(
+    novels: CatalogueNovel[],
+    pageNo: number,
+  ): Plugin.NovelItem[] {
+    if (!Number.isInteger(pageNo) || pageNo < 1) return [];
+    const start = (pageNo - 1) * 20;
+    return novels.slice(start, start + 20).map(novel => ({
+      name: novel.title,
+      path: '/novel/' + novel.slug,
+      cover: novel.coverUrl || defaultCover,
+    }));
+  }
+
+  async popularNovels(
+    pageNo: number,
+    { showLatestNovels }: Plugin.PopularNovelsOptions,
+  ): Promise<Plugin.NovelItem[]> {
+    const novels = await this.catalogue();
+    novels.sort((a, b) =>
+      showLatestNovels
+        ? (b.added || 0) - (a.added || 0)
+        : (b.hearts || 0) - (a.hearts || 0),
+    );
+    return this.results(novels, pageNo);
+  }
+
+  async searchNovels(
+    searchTerm: string,
+    pageNo: number,
+  ): Promise<Plugin.NovelItem[]> {
+    const normalize = (text: string) =>
+      text.toLowerCase().replace(/[‘’]/g, "'").trim();
+    const query = normalize(searchTerm);
+    const novels = (await this.catalogue()).filter(novel =>
+      [novel.title]
+        .concat(novel.altNames || [])
+        .some(title => normalize(title).includes(query)),
+    );
+    return this.results(novels, pageNo);
+  }
+
+  async parseNovel(
+    novelPath: string,
+  ): Promise<Plugin.SourceNovel & { totalPages: number }> {
+    const path = this.novelPath(novelPath);
+    const data = readPageData<NovelData>(await this.request(path), 'novel');
+    if (!data.title || !data.slug || !Array.isArray(data.chapterList)) {
+      throw new Error('NovTales: invalid novel data.');
+    }
+    this.chapterPages[path] = Math.max(1, data.chapterTotalPages || 1);
+    const statuses: Record<string, string> = {
+      ONGOING: NovelStatus.Ongoing,
+      COMPLETED: NovelStatus.Completed,
+      HIATUS: NovelStatus.OnHiatus,
+      CANCELLED: NovelStatus.Cancelled,
+    };
+    return {
+      path,
+      name: data.title,
+      cover: data.coverUrl || defaultCover,
+      author: data.author,
+      summary: data.synopsis,
+      genres: data.genres?.join(', '),
+      status:
+        statuses[(data.status || '').toUpperCase()] || NovelStatus.Unknown,
+      rating: data.ratingAverage || undefined,
+      totalPages: this.chapterPages[path],
+      chapters: [],
+    };
+  }
+
+  async parsePage(novelPath: string, page: string): Promise<Plugin.SourcePage> {
+    const path = this.novelPath(novelPath);
+    const pageNo = Number(page);
+    if (!Number.isInteger(pageNo) || pageNo < 1) return { chapters: [] };
+    if (!this.chapterPages[path]) await this.parseNovel(path);
+    const totalPages = this.chapterPages[path];
+    if (pageNo > totalPages) return { chapters: [] };
+    // The site's pages run newest to oldest; LNReader's pages run oldest first.
+    const html = await this.request(
+      path + '?chapters=' + (totalPages - pageNo + 1),
+    );
+    const data = readPageData<NovelData>(html, 'novel');
+    if (!Array.isArray(data.chapterList))
+      throw new Error('NovTales: missing chapter list.');
+    const chapters: Plugin.ChapterItem[] = data.chapterList.map(chapter => ({
+      name: chapter.title + (chapter.locked ? ' 🔒' : ''),
+      path: '/chapter/' + data.slug + '-' + chapter.number,
+      chapterNumber: chapter.number,
+      releaseTime: chapter.time,
+    }));
+    chapters.sort((a, b) => (a.chapterNumber || 0) - (b.chapterNumber || 0));
+    return { chapters };
+  }
+
+  async parseChapter(chapterPath: string): Promise<string> {
+    const $ = loadCheerio(await this.request(chapterPath));
+    if (
+      $('article h2')
+        .toArray()
+        .some(element => $(element).text().trim() === 'Unlock Access')
+    ) {
+      throw new Error(
+        'NovTales: this chapter requires a membership. Open it on the website to access it.',
+      );
+    }
+    const content = $('.nv-chapter-body').first();
+    content
+      .find(
+        'script, style, button, [hidden], [aria-hidden="true"], [data-security-canary]',
+      )
+      .remove();
+    if (!content.text().trim())
+      throw new Error('NovTales: chapter text is unavailable.');
+    return content.html() || '';
+  }
+}
+
+export default new NovTales();
