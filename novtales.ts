@@ -78,7 +78,7 @@ class NovTales implements Plugin.PagePlugin {
   name = 'NovTales';
   icon = 'src/en/novtales/icon.png';
   site = 'https://novtales.com';
-  version = '1.0.0';
+  version = '1.0.1';
   filters = undefined;
 
   private chapterPages: Record<string, number> = {};
@@ -93,20 +93,37 @@ class NovTales implements Plugin.PagePlugin {
   }
 
   private async request(path: string): Promise<string> {
-    const response = await fetchApi(this.resolveUrl(path));
-    if (!response.ok) {
-      throw Object.assign(new Error('NovTales: HTTP ' + response.status), {
-        status: response.status,
-      });
-    }
+    // LNReader 2.1.4 preserves a Headers instance instead of adding its
+    // synthetic fetch-metadata defaults. It still supplies the WebView UA.
+    const response = await fetchApi(this.resolveUrl(path), {
+      credentials: 'include',
+      headers: new Headers({
+        'Accept':
+          'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': this.site + '/',
+      }),
+    });
     const html = await response.text();
-    if (/Vercel Security Checkpoint|<title>Just a moment/i.test(html)) {
+    if (
+      response.headers.get('x-vercel-mitigated') === 'challenge' ||
+      /Vercel Security Checkpoint|<title>Just a moment/i.test(html)
+    ) {
       throw Object.assign(
         new Error(
-          'NovTales: browser verification required. Open the source in WebView and try again.',
+          'NovTales: browser verification blocked this request (HTTP ' +
+            response.status +
+            '). Open Explore in the source WebView, then return and retry.',
         ),
-        { status: 403 },
+        { status: response.ok ? 403 : response.status },
       );
+    }
+    if (!response.ok) {
+      const message =
+        response.status === 429
+          ? 'NovTales: too many requests (HTTP 429). Wait before retrying.'
+          : 'NovTales: HTTP ' + response.status;
+      throw Object.assign(new Error(message), { status: response.status });
     }
     return html;
   }

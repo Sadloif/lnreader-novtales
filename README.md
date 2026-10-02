@@ -33,3 +33,9 @@ Created October 2, 2026. TypeScript compilation, targeted lint/format checks and
 If the website challenges your device, try opening NovTales in LNReader's WebView and completing the site's verification. Membership access remains subject to the website's requirements.
 
 This plugin was developed with assistance from OpenAI Codex. It is an independent source plugin and is not affiliated with NovTales or the LNReader project.
+
+## Version 1.0.1
+
+Includes the device's cookies explicitly in page requests and avoids LNReader's synthetic request headers while retaining the app's WebView user agent. Distinguishes Vercel verification challenges from rate limiting. This is a compatibility update requiring an on-device test; it is not a confirmed solution to Vercel challenges.
+
+In LNReader, refresh the repository and update NovTales. Open the source WebView, navigate to Explore, wait for the library to load, then return and retry. Do not clear cookies between these steps.

@@ -88,7 +88,7 @@ var NovTales = /** @class */ (function () {
         this.name = 'NovTales';
         this.icon = 'src/en/novtales/icon.png';
         this.site = 'https://novtales.com';
-        this.version = '1.0.0';
+        this.version = '1.0.1';
         this.filters = undefined;
         this.chapterPages = {};
     }
@@ -102,22 +102,33 @@ var NovTales = /** @class */ (function () {
     };
     NovTales.prototype.request = function (path) {
         return __awaiter(this, void 0, void 0, function () {
-            var response, html;
+            var response, html, message;
             return __generator(this, function (_a) {
                 switch (_a.label) {
-                    case 0: return [4 /*yield*/, (0, fetch_1.fetchApi)(this.resolveUrl(path))];
+                    case 0: return [4 /*yield*/, (0, fetch_1.fetchApi)(this.resolveUrl(path), {
+                            credentials: 'include',
+                            headers: new Headers({
+                                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                                'Accept-Language': 'en-US,en;q=0.9',
+                                'Referer': this.site + '/',
+                            }),
+                        })];
                     case 1:
                         response = _a.sent();
-                        if (!response.ok) {
-                            throw Object.assign(new Error('NovTales: HTTP ' + response.status), {
-                                status: response.status,
-                            });
-                        }
                         return [4 /*yield*/, response.text()];
                     case 2:
                         html = _a.sent();
-                        if (/Vercel Security Checkpoint|<title>Just a moment/i.test(html)) {
-                            throw Object.assign(new Error('NovTales: browser verification required. Open the source in WebView and try again.'), { status: 403 });
+                        if (response.headers.get('x-vercel-mitigated') === 'challenge' ||
+                            /Vercel Security Checkpoint|<title>Just a moment/i.test(html)) {
+                            throw Object.assign(new Error('NovTales: browser verification blocked this request (HTTP ' +
+                                response.status +
+                                '). Open Explore in the source WebView, then return and retry.'), { status: response.ok ? 403 : response.status });
+                        }
+                        if (!response.ok) {
+                            message = response.status === 429
+                                ? 'NovTales: too many requests (HTTP 429). Wait before retrying.'
+                                : 'NovTales: HTTP ' + response.status;
+                            throw Object.assign(new Error(message), { status: response.status });
                         }
                         return [2 /*return*/, html];
                 }
