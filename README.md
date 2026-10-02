@@ -28,6 +28,8 @@ Keep the official LNReader plugin repository enabled alongside this one.
 - `novtales.js`: the compiled plugin downloaded by LNReader.
 - `novtales.ts`: TypeScript source for maintenance.
 - `icon.png`: a 96px version of NovTales' existing logo.
+- `gate-watch.cjs`: polls NovTales and prints the moment the bot check lifts — the point at which this plugin starts working with no changes.
+- `findings.md`: the full evidence behind the Status section, and how to reproduce it.
 
 To edit and rebuild the source, use the [LNReader plugin development repository](https://github.com/lnreader/lnreader-plugins), placing `novtales.ts` in `plugins/english/` and the icon in `public/static/src/en/novtales/`. Follow its build and testing instructions. Publish the resulting JavaScript here and increment the version in both the source and manifest when updating.
 
@@ -66,6 +68,17 @@ Its parsers are verified correct against the live site (212 catalogue entries, 8
 pages, decimal and locked chapters), so it resumes working unchanged if NovTales narrows
 or removes the checkpoint — for example by exempting `/api/public/*`. Until then it fails
 fast with an accurate message instead of asking you to retry something futile.
+
+`gate-watch.cjs` in this repository watches for exactly that moment:
+
+```sh
+node gate-watch.cjs            # check every 30 minutes
+node gate-watch.cjs 5          # check every 5 minutes
+node gate-watch.cjs --once     # single check; exit 0 means the gate is open
+```
+
+When it prints `GATE LIFTED`, refresh the NovTales source in LNReader — v1.0.2 starts
+working immediately, with no update needed.
 
 ## Validation
 
