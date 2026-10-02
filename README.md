@@ -3,7 +3,7 @@
 Add this repository URL to LNReader, refresh the source list, then install **NovTales**:
 
 ```text
-https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/plugins.json
+https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/plugins.min.json
 ```
 
 Keep the official LNReader plugin repository enabled alongside this one.
@@ -19,7 +19,7 @@ Keep the official LNReader plugin repository enabled alongside this one.
 
 ## Files
 
-- `plugins.json`: the repository list read by LNReader.
+- `plugins.min.json`: the repository list read by LNReader.
 - `novtales.js`: the compiled plugin downloaded by LNReader.
 - `novtales.ts`: TypeScript source for maintenance.
 - `icon.png`: a 96px version of NovTales' existing logo.
