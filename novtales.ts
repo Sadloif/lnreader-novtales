@@ -1,3 +1,29 @@
+/**
+ * NovTales (novtales.com).
+ *
+ * KNOWN BLOCKER — see novtales-validation/findings.md for the full evidence.
+ *
+ * The site is served behind Vercel's Security Checkpoint, which here admits only
+ * clients whose TLS handshake matches a real browser. React Native's fetch (OkHttp
+ * on Android) does not, so every request comes back HTTP 429 with
+ * `x-vercel-mitigated: challenge`. Measured, not assumed:
+ *
+ *   - real Chrome, even headless and even forced to HTTP/1.1, gets 200 OK — with an
+ *     EMPTY cookie jar, i.e. the checkpoint issues no session a plugin could reuse;
+ *   - Node fetch sending the complete Chrome header set gets 429 over both HTTP/1.1
+ *     and HTTP/2.
+ *
+ * Identical headers, identical HTTP version, identical IP — the only remaining
+ * variable is the TLS ClientHello. No header, user agent, cookie or source-WebView
+ * visit can change that, so this plugin reports the block honestly instead of asking
+ * the user to retry something that cannot work.
+ *
+ * The parsing below is verified correct against the live site (212 catalogue entries,
+ * 81 chapter pages, decimal and locked chapters), so this plugin resumes working
+ * unchanged if NovTales narrows or removes the checkpoint. Chapter text additionally
+ * requires a signed-in session: `POST /api/public/chapter-grant` returns 401 to
+ * anonymous visitors and the served `.nv-chapter-body` is empty.
+ */
 import { fetchApi } from '@libs/fetch';
 import { Plugin } from '@/types/plugin';
 import { load as loadCheerio } from 'cheerio';
@@ -78,7 +104,7 @@ class NovTales implements Plugin.PagePlugin {
   name = 'NovTales';
   icon = 'src/en/novtales/icon.png';
   site = 'https://novtales.com';
-  version = '1.0.1';
+  version = '1.0.2';
   filters = undefined;
 
   private chapterPages: Record<string, number> = {};
@@ -109,11 +135,16 @@ class NovTales implements Plugin.PagePlugin {
       response.headers.get('x-vercel-mitigated') === 'challenge' ||
       /Vercel Security Checkpoint|<title>Just a moment/i.test(html)
     ) {
+      // Deliberately not "open the site in the source WebView and retry": that was
+      // tested and cannot work. The checkpoint issues no cookie (a real browser gets
+      // 200 with an empty jar) and rejects non-browser TLS fingerprints outright.
       throw Object.assign(
         new Error(
-          'NovTales: browser verification blocked this request (HTTP ' +
+          'NovTales: blocked by the site\u2019s Vercel bot check (HTTP ' +
             response.status +
-            '). Open Explore in the source WebView, then return and retry.',
+            '). Every non-browser client is rejected, and no header, cookie or ' +
+            'source-WebView visit changes that \u2014 the check is on the TLS ' +
+            'handshake. This source cannot be read while that protection is enabled.',
         ),
         { status: response.ok ? 403 : response.status },
       );
