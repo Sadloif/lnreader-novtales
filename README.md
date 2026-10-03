@@ -1,71 +1,49 @@
 # NovTales for LNReader
 
-The stock-app source remains version 1.0.3. Its direct page requests currently encounter NovTales browser verification, and complete chapter reading has not been verified in stock LNReader.
+This is a plugin for the official LNReader app. No custom app or APK is required.
 
-## Browser reader preview (1.1.0)
-
-A separate **LNReader NovTales** Android preview adds a visible website browser. NovTales loads a chapter through its normal reader; after the correct chapter end marker appears, LNReader opens the complete text. See [installation instructions and current evidence](NOVTALES-BROWSER.md).
-
-The preview APK is built by [Build NovTales Browser Reader](https://github.com/Sadloif/lnreader-novtales/actions/workflows/build-novtales-browser.yml). Android operation still needs verification on a real phone. The companion repository is:
-
-```text
-https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/browser-plugins.min.json
-```
-
-Public chapters do not necessarily require sign-in. A complete public Chapter 1 loaded in Brave while signed out. Paid chapters still require valid website access. Browser verification and membership are separate conditions.
-
-## Stock-app repository
-
-Add this repository URL to LNReader, refresh the source list, then install **NovTales**:
+Add this repository in LNReader, refresh it, then update NovTales to **1.0.4**:
 
 ```text
 https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/plugins.min.json
 ```
 
-Keep the official LNReader plugin repository enabled alongside this one. The browser preview requires its separate app and companion repository above.
+Keep the official LNReader source repository enabled alongside this repository.
 
-## Features
+## Current status
 
-- Popular titles and latest arrivals.
-- Search by title and alternative title.
-- Novel descriptions, author, covers, genres, status and rating.
-- Chapter pages ordered from oldest to newest, including decimal chapters.
-- Clean chapter HTML with formatting preserved when a complete chapter is delivered.
-- Protected delivery flags are distinct from paid membership access. A preview alone is not accepted as a complete chapter.
+The website access problem is **not fixed yet**. Current command-line checks receive
+HTTP 429 with Vercel browser-verification markers. Desktop Brave can load a complete
+public chapter without signing in, but that does not verify Android plugin requests.
 
-## Files
+Version 1.0.4 corrects diagnostics and incomplete-chapter handling. It uses only existing
+LNReader plugin interfaces, caches a successful catalogue for five minutes to reduce
+repeated requests, and rejects previews as incomplete chapters. It does not implement
+NovTales' protected chapter delivery.
 
-- `plugins.min.json`: the stock-app repository list.
-- `novtales.js`: the compiled stock-app source.
-- `novtales.ts`: TypeScript source for maintenance.
-- `browser-plugins.min.json`: the browser preview companion repository.
-- `novtales-browser.js` and `novtales-browser.ts`: browser companion source version 1.1.0.
-- `novtales-browser.patch`: app integration patch for LNReader 2.1.4.
-- `NOVTALES-BROWSER.md`: preview installation instructions and verification limits.
-- `icon.png`: a 96px version of NovTales' existing logo.
-- `gate-watch.cjs`: polls NovTales and reports its current reachability state.
-- `findings.md`: earlier validation evidence and reproduction instructions.
+The custom-app experiment was canceled at the user's request. Development is plugin-only.
 
-To edit and rebuild the source, use the [LNReader plugin development repository](https://github.com/lnreader/lnreader-plugins), placing the TypeScript source in `plugins/english/` and the icon in `public/static/src/en/novtales/`. Follow its build and testing instructions. Increment the source and manifest version when updating.
+## Who defines the error?
 
-## Validation and error attribution
+NovTales returned the HTTP response. The long message saying every non-browser client
+is rejected at the TLS handshake was written in our plugin. The observed response did
+not establish that explanation. Version 1.0.4 reports browser verification or ordinary
+rate limiting without asserting a TLS cause.
 
-Earlier parser checks covered catalogue entries, novel metadata, chapter pagination, decimal chapters, ordering and content cleanup. Current command-line live checks encounter HTTP 429 browser verification; they do not prove Android chapter delivery.
+Sign-in is not required for every public chapter. Paid membership and protected delivery
+are separate conditions. A nonempty initial chapter body can be a preview.
 
-The browser preview passes TypeScript, lint and 13 focused app tests, plus compiled-plugin checks. A complete public chapter loaded in Brave without signing in. Real Android WebView operation remains unverified.
+## Features and validation
 
-**The old TLS explanation was plugin-defined.** The website returned HTTP 429 with Vercel browser-verification markers. Our plugin added the assertion that every non-browser client was rejected at the TLS handshake. That assertion was not established by the response and has been removed from the browser companion source.
+Catalogue and title search, novel metadata, oldest-first chapter pagination, decimal
+chapter numbers, and text cleanup are implemented. Parser and compiled-plugin fixture
+checks pass, as do TypeScript, lint, and formatting checks. Live access remains
+inconclusive because of HTTP 429. Complete reading in the official Android app is
+unverified; changing an error message does not resolve website access.
 
-The earlier blanket statement that chapter text is available only to signed-in members was also incorrect. Public browser reading demonstrated otherwise.
+Source files are `novtales.ts` and its compiled `novtales.js`. Edit TypeScript in the
+[LNReader plugin development repository](https://github.com/LNReader/lnreader-plugins)
+and compile with its production settings; do not hand-edit the compiled bundle.
 
-## Version 1.0.3
-
-Rate-limiting responses are retried twice with a short backoff. These retries do not establish that website browser verification can be resolved by an ordinary page request.
-
-## Version 1.0.1
-
-Included the device's cookies explicitly in page requests and avoided LNReader's synthetic request headers while retaining the app's WebView user agent.
-
----
-
-This plugin was developed with assistance from OpenAI Codex and DeepSeek Harness. It is an independent source plugin and is not affiliated with NovTales or the LNReader project.
+This independent plugin is not affiliated with NovTales or LNReader. Developed with
+assistance from OpenAI Codex and DeepSeek Harness.

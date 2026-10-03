@@ -1,15 +1,10 @@
 /**
  * NovTales (novtales.com).
  *
- * Parsing is verified correct against the live site — 212 catalogue entries, 81 chapter
- * pages, decimal chapters and locked-chapter flags. The full evidence lives in
- * novtales-validation/findings.md.
- *
- * Chapter text is member-delivered. `POST /api/public/chapter-grant` returns 401 to a
- * signed-out visitor and the served `.nv-chapter-body` is empty, because the text is
- * fetched client-side once a grant succeeds. A signed-out reader therefore gets
- * metadata and chapter lists only, and locked chapters are reported with the site's
- * membership requirement rather than worked around.
+ * Public metadata is streamed in Next.js page data. Protected chapter HTML can
+ * contain only a preview; the website loads the rest through its reader requests.
+ * `locked` indicates protected delivery, while `membersOnly` indicates paid access.
+ * Neither parser checks nor successful browser visits prove native app access.
  */
 import { fetchApi } from '@libs/fetch';
 import { Plugin } from '@/types/plugin';
@@ -43,6 +38,12 @@ type NovelData = {
     time?: string;
     locked?: boolean;
   }[];
+};
+
+type ChapterData = {
+  number?: number;
+  locked?: boolean;
+  membersOnly?: boolean;
 };
 
 // A genuine "slow down" 429 earns a couple of short retries before the plugin gives up
@@ -96,10 +97,11 @@ class NovTales implements Plugin.PagePlugin {
   name = 'NovTales';
   icon = 'src/en/novtales/icon.png';
   site = 'https://novtales.com';
-  version = '1.0.3';
+  version = '1.0.4';
   filters = undefined;
 
   private chapterPages: Record<string, number> = {};
+  private cachedCatalogue?: { novels: CatalogueNovel[]; until: number };
 
   resolveUrl(path: string): string {
     if (path.startsWith(this.site + '/')) return path;
@@ -149,9 +151,9 @@ class NovTales implements Plugin.PagePlugin {
     ) {
       throw Object.assign(
         new Error(
-          'NovTales: this page is unavailable (HTTP ' +
+          'NovTales: the site blocked this page request with browser verification (HTTP ' +
             response.status +
-            '). Try again later.',
+            ').',
         ),
         { status: response.ok ? 403 : response.status, challenge: true },
       );
@@ -167,12 +169,17 @@ class NovTales implements Plugin.PagePlugin {
   }
 
   private async catalogue(): Promise<CatalogueNovel[]> {
+    if (this.cachedCatalogue && this.cachedCatalogue.until > Date.now()) {
+      return [...this.cachedCatalogue.novels];
+    }
     const html = await this.request('/explore');
     const novels = readPageData<CatalogueNovel[]>(html, 'catalogue');
     if (!Array.isArray(novels)) throw new Error('NovTales: invalid catalogue.');
-    return novels.filter(
+    const published = novels.filter(
       novel => novel.published !== false && novel.slug && novel.title,
     );
+    this.cachedCatalogue = { novels: published, until: Date.now() + 300000 };
+    return [...published];
   }
 
   private results(
@@ -271,7 +278,12 @@ class NovTales implements Plugin.PagePlugin {
   }
 
   async parseChapter(chapterPath: string): Promise<string> {
-    const $ = loadCheerio(await this.request(chapterPath));
+    const numberMatch = /-(\d+(?:\.\d+)?)$/.exec(this.novelPath(chapterPath));
+    if (!numberMatch) throw new Error('NovTales: invalid chapter path.');
+    const chapterNumber = Number(numberMatch[1]);
+    const endMarker = 'End of Chapter ' + chapterNumber;
+    const html = await this.request(chapterPath);
+    const $ = loadCheerio(html);
     if (
       $('article h2')
         .toArray()
@@ -279,6 +291,27 @@ class NovTales implements Plugin.PagePlugin {
     ) {
       throw new Error(
         'NovTales: this chapter requires a membership. Open it on the website to access it.',
+      );
+    }
+    const chapter = readPageData<ChapterData>(html, 'chapter');
+    if (chapter?.number !== undefined && chapter.number !== chapterNumber) {
+      throw new Error('NovTales: the website returned a different chapter.');
+    }
+    // A nonempty body can still be a preview. Require either unprotected delivery
+    // or the site's completion marker tied to this exact chapter number.
+    const pageComplete =
+      chapter?.number === chapterNumber &&
+      $('article span')
+        .toArray()
+        .some(
+          element =>
+            $(element).text().replace(/\s+/g, ' ').trim() === endMarker,
+        );
+    if (!chapter || (chapter.locked !== false && !pageComplete)) {
+      throw new Error(
+        chapter?.membersOnly
+          ? 'NovTales: this chapter requires membership and protected reader delivery, which this plugin does not support.'
+          : 'NovTales: this page contains a chapter preview. Full text requires protected reader delivery, which this plugin does not support.',
       );
     }
     const content = $('.nv-chapter-body').first();

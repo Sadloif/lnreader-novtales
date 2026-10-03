@@ -35,19 +35,23 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
     }
 };
+var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
+    if (pack || arguments.length === 2) for (var i = 0, l = from.length, ar; i < l; i++) {
+        if (ar || !(i in from)) {
+            if (!ar) ar = Array.prototype.slice.call(from, 0, i);
+            ar[i] = from[i];
+        }
+    }
+    return to.concat(ar || Array.prototype.slice.call(from));
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 /**
  * NovTales (novtales.com).
  *
- * Parsing is verified correct against the live site — 212 catalogue entries, 81 chapter
- * pages, decimal chapters and locked-chapter flags. The full evidence lives in
- * novtales-validation/findings.md.
- *
- * Chapter text is member-delivered. `POST /api/public/chapter-grant` returns 401 to a
- * signed-out visitor and the served `.nv-chapter-body` is empty, because the text is
- * fetched client-side once a grant succeeds. A signed-out reader therefore gets
- * metadata and chapter lists only, and locked chapters are reported with the site's
- * membership requirement rather than worked around.
+ * Public metadata is streamed in Next.js page data. Protected chapter HTML can
+ * contain only a preview; the website loads the rest through its reader requests.
+ * `locked` indicates protected delivery, while `membersOnly` indicates paid access.
+ * Neither parser checks nor successful browser visits prove native app access.
  */
 var fetch_1 = require("@libs/fetch");
 var cheerio_1 = require("cheerio");
@@ -105,7 +109,7 @@ var NovTales = /** @class */ (function () {
         this.name = 'NovTales';
         this.icon = 'src/en/novtales/icon.png';
         this.site = 'https://novtales.com';
-        this.version = '1.0.3';
+        this.version = '1.0.4';
         this.filters = undefined;
         this.chapterPages = {};
     }
@@ -187,9 +191,9 @@ var NovTales = /** @class */ (function () {
                         html = _a.sent();
                         if (response.headers.get('x-vercel-mitigated') === 'challenge' ||
                             /Vercel Security Checkpoint|<title>Just a moment/i.test(html)) {
-                            throw Object.assign(new Error('NovTales: this page is unavailable (HTTP ' +
+                            throw Object.assign(new Error('NovTales: the site blocked this page request with browser verification (HTTP ' +
                                 response.status +
-                                '). Try again later.'), { status: response.ok ? 403 : response.status, challenge: true });
+                                ').'), { status: response.ok ? 403 : response.status, challenge: true });
                         }
                         if (!response.ok) {
                             message = response.status === 429
@@ -204,16 +208,22 @@ var NovTales = /** @class */ (function () {
     };
     NovTales.prototype.catalogue = function () {
         return __awaiter(this, void 0, void 0, function () {
-            var html, novels;
+            var html, novels, published;
             return __generator(this, function (_a) {
                 switch (_a.label) {
-                    case 0: return [4 /*yield*/, this.request('/explore')];
+                    case 0:
+                        if (this.cachedCatalogue && this.cachedCatalogue.until > Date.now()) {
+                            return [2 /*return*/, __spreadArray([], this.cachedCatalogue.novels, true)];
+                        }
+                        return [4 /*yield*/, this.request('/explore')];
                     case 1:
                         html = _a.sent();
                         novels = readPageData(html, 'catalogue');
                         if (!Array.isArray(novels))
                             throw new Error('NovTales: invalid catalogue.');
-                        return [2 /*return*/, novels.filter(function (novel) { return novel.published !== false && novel.slug && novel.title; })];
+                        published = novels.filter(function (novel) { return novel.published !== false && novel.slug && novel.title; });
+                        this.cachedCatalogue = { novels: published, until: Date.now() + 300000 };
+                        return [2 /*return*/, __spreadArray([], published, true)];
                 }
             });
         });
@@ -346,18 +356,38 @@ var NovTales = /** @class */ (function () {
     };
     NovTales.prototype.parseChapter = function (chapterPath) {
         return __awaiter(this, void 0, void 0, function () {
-            var $, _a, content;
-            return __generator(this, function (_b) {
-                switch (_b.label) {
+            var numberMatch, chapterNumber, endMarker, html, $, chapter, pageComplete, content;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
                     case 0:
-                        _a = cheerio_1.load;
+                        numberMatch = /-(\d+(?:\.\d+)?)$/.exec(this.novelPath(chapterPath));
+                        if (!numberMatch)
+                            throw new Error('NovTales: invalid chapter path.');
+                        chapterNumber = Number(numberMatch[1]);
+                        endMarker = 'End of Chapter ' + chapterNumber;
                         return [4 /*yield*/, this.request(chapterPath)];
                     case 1:
-                        $ = _a.apply(void 0, [_b.sent()]);
+                        html = _a.sent();
+                        $ = (0, cheerio_1.load)(html);
                         if ($('article h2')
                             .toArray()
                             .some(function (element) { return $(element).text().trim() === 'Unlock Access'; })) {
                             throw new Error('NovTales: this chapter requires a membership. Open it on the website to access it.');
+                        }
+                        chapter = readPageData(html, 'chapter');
+                        if ((chapter === null || chapter === void 0 ? void 0 : chapter.number) !== undefined && chapter.number !== chapterNumber) {
+                            throw new Error('NovTales: the website returned a different chapter.');
+                        }
+                        pageComplete = (chapter === null || chapter === void 0 ? void 0 : chapter.number) === chapterNumber &&
+                            $('article span')
+                                .toArray()
+                                .some(function (element) {
+                                return $(element).text().replace(/\s+/g, ' ').trim() === endMarker;
+                            });
+                        if (!chapter || (chapter.locked !== false && !pageComplete)) {
+                            throw new Error((chapter === null || chapter === void 0 ? void 0 : chapter.membersOnly)
+                                ? 'NovTales: this chapter requires membership and protected reader delivery, which this plugin does not support.'
+                                : 'NovTales: this page contains a chapter preview. Full text requires protected reader delivery, which this plugin does not support.');
                         }
                         content = $('.nv-chapter-body').first();
                         content
