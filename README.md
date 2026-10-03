@@ -91,6 +91,21 @@ This plugin was developed with assistance from OpenAI Codex; the 1.0.2 investiga
 DeepSeek Harness. It is an independent source plugin and is not affiliated with NovTales
 or the LNReader project.
 
+## Version 1.0.3
+
+Retries genuine rate limiting: a `429` **without** Vercel's challenge markers is now retried
+twice with a short backoff before the plugin reports it, which makes the source more tolerant
+of ordinary traffic limits and of bursts when paging through long chapter lists.
+
+Deliberately **not** retried: the Vercel checkpoint challenge. It is deterministic, so retrying
+it would only add load to a site that has already refused the request; it is detected from
+either the `x-vercel-mitigated: challenge` response header or the checkpoint page body and
+reported immediately. Both paths, and the "other HTTP error" path, are covered by a behaviour
+test (`probe/plugin-behaviour.test.cjs` in the development workspace).
+
+No change to parsing, chapter pagination or the reported block. This version does **not**
+bypass the site's bot protection — see Status above.
+
 ## Version 1.0.2
 
 Replaces the misleading "browser verification blocked this request … open Explore in the

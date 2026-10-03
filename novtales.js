@@ -66,6 +66,10 @@ var fetch_1 = require("@libs/fetch");
 var cheerio_1 = require("cheerio");
 var defaultCover_1 = require("@libs/defaultCover");
 var novelStatus_1 = require("@libs/novelStatus");
+// A genuine "slow down" 429 - as opposed to Vercel's deterministic challenge - earns a
+// couple of short retries before the plugin gives up and asks the reader to wait.
+var RATE_LIMIT_ATTEMPTS = 2;
+var RATE_LIMIT_BACKOFF_MS = 1500;
 // Next.js streams JSON text in several script elements. Decode the strings,
 // without executing site JavaScript, before extracting a balanced JSON value.
 function readPageData(html, key) {
@@ -114,7 +118,7 @@ var NovTales = /** @class */ (function () {
         this.name = 'NovTales';
         this.icon = 'src/en/novtales/icon.png';
         this.site = 'https://novtales.com';
-        this.version = '1.0.2';
+        this.version = '1.0.3';
         this.filters = undefined;
         this.chapterPages = {};
     }
@@ -127,6 +131,56 @@ var NovTales = /** @class */ (function () {
         return path.replace(/^https:\/\/novtales\.com/, '').split(/[?#]/)[0];
     };
     NovTales.prototype.request = function (path) {
+        return __awaiter(this, void 0, void 0, function () {
+            var _loop_1, this_1, attempt, state_1;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        _loop_1 = function (attempt) {
+                            var _b, error_1, failure, retryable;
+                            return __generator(this, function (_c) {
+                                switch (_c.label) {
+                                    case 0:
+                                        _c.trys.push([0, 2, , 4]);
+                                        _b = {};
+                                        return [4 /*yield*/, this_1.fetchOnce(path)];
+                                    case 1: return [2 /*return*/, (_b.value = _c.sent(), _b)];
+                                    case 2:
+                                        error_1 = _c.sent();
+                                        failure = error_1;
+                                        retryable = failure.status === 429 &&
+                                            failure.challenge !== true &&
+                                            attempt < RATE_LIMIT_ATTEMPTS;
+                                        if (!retryable)
+                                            throw error_1;
+                                        return [4 /*yield*/, new Promise(function (resolve) {
+                                                return setTimeout(resolve, RATE_LIMIT_BACKOFF_MS * (attempt + 1));
+                                            })];
+                                    case 3:
+                                        _c.sent();
+                                        return [3 /*break*/, 4];
+                                    case 4: return [2 /*return*/];
+                                }
+                            });
+                        };
+                        this_1 = this;
+                        attempt = 0;
+                        _a.label = 1;
+                    case 1: return [5 /*yield**/, _loop_1(attempt)];
+                    case 2:
+                        state_1 = _a.sent();
+                        if (typeof state_1 === "object")
+                            return [2 /*return*/, state_1.value];
+                        _a.label = 3;
+                    case 3:
+                        attempt++;
+                        return [3 /*break*/, 1];
+                    case 4: return [2 /*return*/];
+                }
+            });
+        });
+    };
+    NovTales.prototype.fetchOnce = function (path) {
         return __awaiter(this, void 0, void 0, function () {
             var response, html, message;
             return __generator(this, function (_a) {
@@ -153,7 +207,7 @@ var NovTales = /** @class */ (function () {
                                 response.status +
                                 '). Every non-browser client is rejected, and no header, cookie or ' +
                                 'source-WebView visit changes that \u2014 the check is on the TLS ' +
-                                'handshake. This source cannot be read while that protection is enabled.'), { status: response.ok ? 403 : response.status });
+                                'handshake. This source cannot be read while that protection is enabled.'), { status: response.ok ? 403 : response.status, challenge: true });
                         }
                         if (!response.ok) {
                             message = response.status === 429

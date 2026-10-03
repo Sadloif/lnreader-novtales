@@ -58,6 +58,11 @@ type NovelData = {
   }[];
 };
 
+// A genuine "slow down" 429 - as opposed to Vercel's deterministic challenge - earns a
+// couple of short retries before the plugin gives up and asks the reader to wait.
+const RATE_LIMIT_ATTEMPTS = 2;
+const RATE_LIMIT_BACKOFF_MS = 1500;
+
 // Next.js streams JSON text in several script elements. Decode the strings,
 // without executing site JavaScript, before extracting a balanced JSON value.
 function readPageData<T>(html: string, key: string): T {
@@ -104,7 +109,7 @@ class NovTales implements Plugin.PagePlugin {
   name = 'NovTales';
   icon = 'src/en/novtales/icon.png';
   site = 'https://novtales.com';
-  version = '1.0.2';
+  version = '1.0.3';
   filters = undefined;
 
   private chapterPages: Record<string, number> = {};
@@ -119,6 +124,27 @@ class NovTales implements Plugin.PagePlugin {
   }
 
   private async request(path: string): Promise<string> {
+    // Retry genuine rate limiting only. Vercel's checkpoint challenge is
+    // deterministic: it carries `challenge: true` and is re-thrown immediately, so
+    // the plugin never hammers a site that has told us to stop.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.fetchOnce(path);
+      } catch (error) {
+        const failure = error as { status?: number; challenge?: boolean };
+        const retryable =
+          failure.status === 429 &&
+          failure.challenge !== true &&
+          attempt < RATE_LIMIT_ATTEMPTS;
+        if (!retryable) throw error;
+        await new Promise(resolve =>
+          setTimeout(resolve, RATE_LIMIT_BACKOFF_MS * (attempt + 1)),
+        );
+      }
+    }
+  }
+
+  private async fetchOnce(path: string): Promise<string> {
     // LNReader 2.1.4 preserves a Headers instance instead of adding its
     // synthetic fetch-metadata defaults. It still supplies the WebView UA.
     const response = await fetchApi(this.resolveUrl(path), {
@@ -146,7 +172,7 @@ class NovTales implements Plugin.PagePlugin {
             'source-WebView visit changes that \u2014 the check is on the TLS ' +
             'handshake. This source cannot be read while that protection is enabled.',
         ),
-        { status: response.ok ? 403 : response.status },
+        { status: response.ok ? 403 : response.status, challenge: true },
       );
     }
     if (!response.ok) {
