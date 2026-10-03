@@ -149,7 +149,7 @@ class NovTales implements Plugin.PagePlugin {
     ) {
       throw Object.assign(
         new Error(
-          'NovTales: the site is not serving this reader (HTTP ' +
+          'NovTales: this page is unavailable (HTTP ' +
             response.status +
             '). Try again later.',
         ),

@@ -187,7 +187,7 @@ var NovTales = /** @class */ (function () {
                         html = _a.sent();
                         if (response.headers.get('x-vercel-mitigated') === 'challenge' ||
                             /Vercel Security Checkpoint|<title>Just a moment/i.test(html)) {
-                            throw Object.assign(new Error('NovTales: the site is not serving this reader (HTTP ' +
+                            throw Object.assign(new Error('NovTales: this page is unavailable (HTTP ' +
                                 response.status +
                                 '). Try again later.'), { status: response.ok ? 403 : response.status, challenge: true });
                         }
