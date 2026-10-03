@@ -1,0 +1,703 @@
+diff --git a/App.tsx b/App.tsx
+index 62261ab..5b8d6ef 100644
+--- a/App.tsx
++++ b/App.tsx
+@@ -15,6 +15,7 @@ import AppErrorBoundary, {
+   ErrorFallback,
+ } from '@components/AppErrorBoundary/AppErrorBoundary';
+ import CrashRecoveryGate from '@components/AppErrorBoundary/CrashRecoveryGate';
++import BrowserPageHost from '@components/BrowserPageHost/BrowserPageHost';
+ 
+ import Main from './src/navigators/Main';
+ import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
+@@ -98,6 +99,7 @@ const Application = () => {
+               <BottomSheetModalProvider>
+                 <StatusBar translucent={true} backgroundColor="transparent" />
+                 <Main />
++                <BrowserPageHost />
+               </BottomSheetModalProvider>
+             </ThemedPaperProvider>
+           </SafeAreaProvider>
+diff --git a/plugins/android/android-build-types.gradle b/plugins/android/android-build-types.gradle
+index 6133e44..797ae3a 100644
+--- a/plugins/android/android-build-types.gradle
++++ b/plugins/android/android-build-types.gradle
+@@ -37,7 +37,7 @@ android {
+             applicationIdSuffix ".preRelease"
+             versionNameSuffix "-pre-release"
+             signingConfig signingConfigs.debug
+-            resValue "string", "app_name", "LNReader Preview"
++            resValue "string", "app_name", "LNReader NovTales"
+         }
+     }
+ }
+diff --git a/src/components/BrowserPageHost/BrowserPageHost.tsx b/src/components/BrowserPageHost/BrowserPageHost.tsx
+new file mode 100644
+index 0000000..8a1bfa7
+--- /dev/null
++++ b/src/components/BrowserPageHost/BrowserPageHost.tsx
+@@ -0,0 +1,91 @@
++import { useEffect, useSyncExternalStore } from 'react';
++import { AppState, Modal, StyleSheet, Text, View } from 'react-native';
++import { SafeAreaView } from 'react-native-safe-area-context';
++import WebView from 'react-native-webview';
++import { Button } from 'react-native-paper';
++
++import { useTheme } from '@hooks/persisted';
++import { getUserAgent } from '@hooks/persisted/useUserAgent';
++import { getString } from '@i18n/translations';
++import {
++  browserPageCaptureScript,
++  cancelBrowserPage,
++  getBrowserPageRequest,
++  receiveBrowserPage,
++  registerBrowserPageHost,
++  setBrowserPageForeground,
++  subscribeBrowserPage,
++} from '@plugins/helpers/browser';
++
++const BrowserPageHost = () => {
++  const request = useSyncExternalStore(
++    subscribeBrowserPage,
++    getBrowserPageRequest,
++    getBrowserPageRequest,
++  );
++  const theme = useTheme();
++  useEffect(registerBrowserPageHost, []);
++  useEffect(() => {
++    setBrowserPageForeground(AppState.currentState === 'active');
++    const subscription = AppState.addEventListener('change', state => {
++      setBrowserPageForeground(state === 'active');
++    });
++    return () => subscription.remove();
++  }, []);
++
++  if (!request) return null;
++  const cancel = () => cancelBrowserPage(request.id);
++
++  return (
++    <Modal visible animationType="slide" onRequestClose={cancel}>
++      <SafeAreaView
++        style={[styles.container, { backgroundColor: theme.background }]}
++      >
++        <View style={styles.header}>
++          <Text style={[styles.title, { color: theme.onSurface }]}>
++            {request.pluginName}
++          </Text>
++          <Button onPress={cancel}>{getString('common.cancel')}</Button>
++        </View>
++        {request.instruction ? (
++          <Text style={[styles.instruction, { color: theme.onSurfaceVariant }]}>
++            {request.instruction}
++          </Text>
++        ) : null}
++        <WebView
++          key={request.id}
++          source={{ uri: request.url }}
++          userAgent={getUserAgent()}
++          sharedCookiesEnabled
++          setSupportMultipleWindows={false}
++          injectedJavaScript={browserPageCaptureScript(request)}
++          onMessage={({ nativeEvent }) =>
++            receiveBrowserPage(request.id, nativeEvent.data, nativeEvent.url)
++          }
++          onError={({ nativeEvent }) =>
++            cancelBrowserPage(request.id, nativeEvent.description)
++          }
++          onHttpError={({ nativeEvent }) => {
++            if (nativeEvent.statusCode === 404) {
++              cancelBrowserPage(request.id, 'The website page was not found.');
++            }
++          }}
++        />
++      </SafeAreaView>
++    </Modal>
++  );
++};
++
++export default BrowserPageHost;
++
++const styles = StyleSheet.create({
++  container: { flex: 1 },
++  header: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++    paddingHorizontal: 16,
++  },
++  title: { fontSize: 18, fontWeight: '600', flex: 1 },
++  instruction: { paddingHorizontal: 16, paddingBottom: 12 },
++});
+diff --git a/src/plugins/__tests__/pluginManager.test.ts b/src/plugins/__tests__/pluginManager.test.ts
+index 49ec0df..d64afd5 100644
+--- a/src/plugins/__tests__/pluginManager.test.ts
++++ b/src/plugins/__tests__/pluginManager.test.ts
+@@ -10,6 +10,11 @@ import {
+   reloadInstalledPlugins,
+ } from '../pluginManager';
+ import type { PluginItem } from '../types';
++import {
++  getBrowserPageRequest,
++  receiveBrowserPage,
++  registerBrowserPageHost,
++} from '@plugins/helpers/browser';
+ 
+ jest.mock('@database/queries/RepositoryQueries', () => ({
+   getEnabledRepositoriesFromDb: jest.fn().mockResolvedValue([]),
+@@ -164,6 +169,47 @@ describe('initializeInstalledPlugins', () => {
+ });
+ 
+ describe('installPlugin', () => {
++  it('lets an installed source request its own browser page and rejects another origin', async () => {
++    const code = `const browser = require('@libs/browser');
++      exports.default = {
++        id: 'browser-source', name: 'Browser source', version: '1.0.0',
++        site: 'https://example.com',
++        parseChapter: url => browser.fetchBrowser(url, {readySelector: 'article'})
++          .then(page => page.html)
++      };`;
++    jest
++      .spyOn(global, 'fetch')
++      .mockResolvedValue({ text: async () => code } as Response);
++    const source = await installPlugin({
++      id: 'browser-source',
++      url: 'https://example.com/plugin.js',
++    } as PluginItem);
++    const dispose = registerBrowserPageHost();
++    try {
++      await expect(
++        source!.parseChapter('https://other.example/chapter'),
++      ).rejects.toThrow('belong');
++      const chapter = source!.parseChapter('https://example.com/chapter');
++      const request = getBrowserPageRequest()!;
++      expect(request.pluginName).toBe('Browser source');
++      receiveBrowserPage(
++        request.id,
++        JSON.stringify({
++          type: 'lnreader-browser-page',
++          id: request.id,
++          url: request.url,
++          html: '<article>Complete chapter</article>',
++        }),
++        request.url,
++      );
++      await expect(chapter).resolves.toBe(
++        '<article>Complete chapter</article>',
++      );
++    } finally {
++      dispose();
++    }
++  });
++
+   it('does not register a plugin when its bundle cannot be persisted', async () => {
+     const plugin = {
+       id: 'write-failure',
+diff --git a/src/plugins/helpers/__tests__/browser.test.ts b/src/plugins/helpers/__tests__/browser.test.ts
+new file mode 100644
+index 0000000..830f580
+--- /dev/null
++++ b/src/plugins/helpers/__tests__/browser.test.ts
+@@ -0,0 +1,243 @@
++import { runInNewContext } from 'vm';
++import {
++  browserPageCaptureScript,
++  cancelBrowserPage,
++  fetchBrowserPage,
++  getBrowserPageRequest,
++  receiveBrowserPage,
++  registerBrowserPageHost,
++  setBrowserPageForeground,
++} from '../browser';
++
++const site = 'https://novtales.com';
++const options = { readySelector: 'article', readyText: 'End of Chapter 1' };
++
++describe('browser page delivery', () => {
++  let dispose: () => void;
++
++  beforeEach(() => {
++    jest.useFakeTimers();
++    setBrowserPageForeground(true);
++    dispose = registerBrowserPageHost();
++  });
++
++  afterEach(() => {
++    dispose();
++    jest.useRealTimers();
++  });
++
++  const respond = (
++    id: number,
++    url: string,
++    html = '<article>Complete</article>',
++  ) =>
++    receiveBrowserPage(
++      id,
++      JSON.stringify({ type: 'lnreader-browser-page', id, url, html }),
++      url,
++    );
++
++  it('serializes pages and ignores a stale or redirected result', async () => {
++    const first = fetchBrowserPage(
++      'NovTales',
++      site,
++      site + '/chapter/test-1',
++      options,
++    );
++    const firstId = getBrowserPageRequest()!.id;
++    const second = fetchBrowserPage(
++      'NovTales',
++      site,
++      site + '/chapter/test-2',
++      options,
++    );
++    respond(firstId, site + '/signin');
++    expect(getBrowserPageRequest()!.id).toBe(firstId);
++    respond(firstId, site + '/chapter/test-1');
++    await expect(first).resolves.toMatchObject({
++      url: site + '/chapter/test-1',
++    });
++    const secondId = getBrowserPageRequest()!.id;
++    respond(firstId, site + '/chapter/test-1');
++    expect(getBrowserPageRequest()!.id).toBe(secondId);
++    respond(secondId, site + '/chapter/test-2');
++    await expect(second).resolves.toMatchObject({
++      url: site + '/chapter/test-2',
++    });
++    expect(getBrowserPageRequest()).toBeUndefined();
++  });
++
++  it('rejects exports from another frame even when their payload claims the right URL', async () => {
++    const result = fetchBrowserPage(
++      'NovTales',
++      site,
++      site + '/explore',
++      options,
++    );
++    const id = getBrowserPageRequest()!.id;
++    receiveBrowserPage(
++      id,
++      JSON.stringify({
++        type: 'lnreader-browser-page',
++        id,
++        url: site + '/explore',
++        html: '<article>Forged</article>',
++      }),
++      'https://other.example/explore',
++    );
++    expect(getBrowserPageRequest()!.id).toBe(id);
++    respond(id, site + '/explore', '<article>Actual</article>');
++    await expect(result).resolves.toMatchObject({
++      html: '<article>Actual</article>',
++    });
++  });
++
++  it('starts each timeout when its page opens, not while it is queued', async () => {
++    const first = fetchBrowserPage('NovTales', site, site + '/one', {
++      ...options,
++      timeoutMs: 10000,
++    });
++    const id = getBrowserPageRequest()!.id;
++    const second = fetchBrowserPage('NovTales', site, site + '/two', {
++      ...options,
++      timeoutMs: 10000,
++    });
++    jest.advanceTimersByTime(9000);
++    respond(id, site + '/one');
++    await first;
++    jest.advanceTimersByTime(9000);
++    expect(getBrowserPageRequest()!.url).toBe(site + '/two');
++    const rejection = second.catch(error => error);
++    jest.advanceTimersByTime(1001);
++    expect((await rejection).message).toContain('did not finish');
++  });
++
++  it('rejects cross-origin and insecure requests before opening a page', async () => {
++    await expect(
++      fetchBrowserPage('NovTales', 'invalid', 'invalid', options),
++    ).rejects.toThrow('invalid');
++    await expect(
++      fetchBrowserPage('NovTales', site, 'https://other.example/', options),
++    ).rejects.toThrow('belong');
++    await expect(
++      fetchBrowserPage(
++        'NovTales',
++        'http://novtales.com',
++        'http://novtales.com',
++        options,
++      ),
++    ).rejects.toThrow('belong');
++    expect(getBrowserPageRequest()).toBeUndefined();
++  });
++
++  it('cancels pending pages in the background and requires a foreground retry', async () => {
++    const first = fetchBrowserPage(
++      'NovTales',
++      site,
++      site + '/one',
++      options,
++    ).catch(error => error);
++    const second = fetchBrowserPage(
++      'NovTales',
++      site,
++      site + '/two',
++      options,
++    ).catch(error => error);
++    setBrowserPageForeground(false);
++    expect((await first).message).toContain('Return to LNReader');
++    expect((await second).message).toContain('Return to LNReader');
++    await expect(
++      fetchBrowserPage('NovTales', site, site + '/three', options),
++    ).rejects.toThrow('Return to LNReader');
++    expect(getBrowserPageRequest()).toBeUndefined();
++  });
++
++  it('lets cancellation advance the queue and closes all requests when the host unmounts', async () => {
++    const first = fetchBrowserPage('NovTales', site, site + '/one', options);
++    const second = fetchBrowserPage('NovTales', site, site + '/two', options);
++    const firstRejection = first.catch(error => error);
++    cancelBrowserPage(getBrowserPageRequest()!.id);
++    expect((await firstRejection).message).toContain('cancelled');
++    expect(getBrowserPageRequest()!.url).toBe(site + '/two');
++    const secondRejection = second.catch(error => error);
++    dispose();
++    dispose = () => undefined;
++    expect((await secondRejection).message).toContain('closed');
++    expect(getBrowserPageRequest()).toBeUndefined();
++  });
++
++  it('captures only after full content appears and refuses a verification page or redirect', () => {
++    const postMessage = jest.fn();
++    const node = { textContent: 'A chapter preview' };
++    const document = {
++      title: 'Chapter 1',
++      readyState: 'complete',
++      documentElement: { outerHTML: '<article>Full chapter</article>' },
++      querySelectorAll: () => [node],
++    };
++    const location = {
++      origin: site,
++      pathname: '/chapter/test-1',
++      search: '',
++      href: site + '/chapter/test-1',
++    };
++    let mutated: () => void = () => undefined;
++    class MutationObserver {
++      constructor(callback: () => void) {
++        mutated = callback;
++      }
++      observe() {
++        /* DOM changes are driven explicitly by this test. */
++      }
++      disconnect() {
++        /* No real observer is installed in this isolated scope. */
++      }
++    }
++    runInNewContext(
++      browserPageCaptureScript({
++        ...options,
++        readyTextExact: true,
++        id: 42,
++        pluginName: 'NovTales',
++        url: location.href,
++      }),
++      {
++        document,
++        location,
++        URL,
++        MutationObserver,
++        setTimeout,
++        clearTimeout,
++        window: {
++          ReactNativeWebView: { postMessage },
++          addEventListener: jest.fn(),
++        },
++      },
++    );
++    jest.advanceTimersByTime(201);
++    expect(postMessage).not.toHaveBeenCalled();
++    node.textContent = 'End of Chapter 10';
++    mutated();
++    jest.advanceTimersByTime(201);
++    expect(postMessage).not.toHaveBeenCalled();
++    node.textContent = 'End of Chapter 1';
++    document.title = 'Vercel Security Checkpoint';
++    mutated();
++    jest.advanceTimersByTime(201);
++    expect(postMessage).not.toHaveBeenCalled();
++    document.title = 'Chapter 1';
++    location.pathname = '/signin';
++    mutated();
++    jest.advanceTimersByTime(201);
++    expect(postMessage).not.toHaveBeenCalled();
++    location.pathname = '/chapter/test-1';
++    mutated();
++    jest.advanceTimersByTime(201);
++    expect(postMessage).toHaveBeenCalledTimes(1);
++    expect(JSON.parse(postMessage.mock.calls[0][0])).toMatchObject({
++      type: 'lnreader-browser-page',
++      id: 42,
++      html: '<article>Full chapter</article>',
++    });
++  });
++});
+diff --git a/src/plugins/helpers/browser.ts b/src/plugins/helpers/browser.ts
+new file mode 100644
+index 0000000..b50e6cb
+--- /dev/null
++++ b/src/plugins/helpers/browser.ts
+@@ -0,0 +1,225 @@
++export type BrowserPageOptions = {
++  readySelector: string;
++  readyText?: string;
++  readyTextExact?: boolean;
++  instruction?: string;
++  timeoutMs?: number;
++};
++
++export type BrowserPage = {
++  url: string;
++  html: string;
++};
++
++export type BrowserPageRequest = BrowserPageOptions & {
++  id: number;
++  pluginName: string;
++  url: string;
++};
++
++type PendingPage = {
++  request: BrowserPageRequest;
++  resolve: (page: BrowserPage) => void;
++  reject: (error: Error) => void;
++};
++
++let nextId = 0;
++let active: PendingPage | undefined;
++let timer: ReturnType<typeof setTimeout> | undefined;
++let hostCount = 0;
++let foreground = true;
++const queue: PendingPage[] = [];
++const listeners = new Set<() => void>();
++
++export const getBrowserPageRequest = () => active?.request;
++
++export const subscribeBrowserPage = (listener: () => void) => {
++  listeners.add(listener);
++  return () => listeners.delete(listener);
++};
++
++const notify = () => listeners.forEach(listener => listener());
++
++const startNext = () => {
++  active = queue.shift();
++  if (active) {
++    const id = active.request.id;
++    timer = setTimeout(
++      () => cancelBrowserPage(id, 'The website did not finish loading.'),
++      active.request.timeoutMs,
++    );
++  }
++  notify();
++};
++
++const settle = (id: number, page?: BrowserPage, error?: Error) => {
++  if (active?.request.id !== id) return;
++  const pending = active;
++  clearTimeout(timer);
++  timer = undefined;
++  active = undefined;
++  if (page) pending.resolve(page);
++  else pending.reject(error || new Error('Website loading was cancelled.'));
++  startNext();
++};
++
++export const cancelBrowserPage = (id: number, message?: string) =>
++  settle(id, undefined, new Error(message || 'Website loading was cancelled.'));
++
++const closeAll = (message: string) => {
++  clearTimeout(timer);
++  timer = undefined;
++  const pending = [active, ...queue];
++  active = undefined;
++  queue.length = 0;
++  pending.forEach(page => page?.reject(new Error(message)));
++  notify();
++};
++
++export const setBrowserPageForeground = (available: boolean) => {
++  foreground = available;
++  if (!available) closeAll('Return to LNReader to load this website.');
++};
++
++const samePage = (expected: string, actual: string) => {
++  try {
++    const target = new URL(expected);
++    const received = new URL(actual);
++    return (
++      target.origin === received.origin &&
++      target.pathname === received.pathname &&
++      target.search === received.search
++    );
++  } catch {
++    return false;
++  }
++};
++
++export const receiveBrowserPage = (
++  id: number,
++  data: string,
++  eventUrl: string,
++) => {
++  if (active?.request.id !== id) return;
++  try {
++    const page = JSON.parse(data);
++    if (
++      page.type !== 'lnreader-browser-page' ||
++      page.id !== id ||
++      !samePage(active.request.url, eventUrl) ||
++      !samePage(active.request.url, page.url)
++    ) {
++      return;
++    }
++    if (typeof page.error === 'string') {
++      cancelBrowserPage(id, page.error);
++    } else if (typeof page.html === 'string' && page.html.trim()) {
++      settle(id, { html: page.html, url: page.url });
++    }
++  } catch {
++    // Page scripts may use the WebView message channel for unrelated events.
++  }
++};
++
++export const registerBrowserPageHost = () => {
++  hostCount++;
++  return () => {
++    hostCount--;
++    if (hostCount !== 0) return;
++    closeAll('The website browser was closed.');
++  };
++};
++
++export const fetchBrowserPage = (
++  pluginName: string,
++  site: string,
++  url: string,
++  options: BrowserPageOptions,
++): Promise<BrowserPage> => {
++  let source: URL;
++  let target: URL;
++  try {
++    source = new URL(site);
++    target = new URL(url, site);
++  } catch {
++    return Promise.reject(new Error('The website URL is invalid.'));
++  }
++  if (source.protocol !== 'https:' || target.origin !== source.origin) {
++    return Promise.reject(new Error('The page must belong to this source.'));
++  }
++  if (!hostCount) {
++    return Promise.reject(new Error('The website browser is not available.'));
++  }
++  if (!foreground) {
++    return Promise.reject(
++      new Error('Return to LNReader to load this website.'),
++    );
++  }
++  if (!options.readySelector || queue.length >= 8) {
++    return Promise.reject(new Error('Too many website requests are waiting.'));
++  }
++  return new Promise((resolve, reject) => {
++    queue.push({
++      request: {
++        ...options,
++        id: ++nextId,
++        pluginName,
++        url: target.href,
++        timeoutMs: Math.max(
++          1000,
++          Math.min(options.timeoutMs || 600000, 1800000),
++        ),
++      },
++      resolve,
++      reject,
++    });
++    if (!active) startNext();
++  });
++};
++
++export const browserPageCaptureScript = (request: BrowserPageRequest) => `
++(function () {
++  var config = ${JSON.stringify({
++    id: request.id,
++    url: request.url,
++    selector: request.readySelector,
++    text: request.readyText || '',
++    exact: request.readyTextExact === true,
++  }).replace(/</g, '\\u003c')};
++  var sent = false;
++  var timer;
++  var observer;
++  function send(result) {
++    if (sent) return;
++    sent = true;
++    if (observer) observer.disconnect();
++    clearTimeout(timer);
++    window.ReactNativeWebView.postMessage(JSON.stringify(Object.assign({
++      type: 'lnreader-browser-page', id: config.id, url: location.href
++    }, result)));
++  }
++  function inspect() {
++    if (sent) return;
++    var expected = new URL(config.url);
++    if (location.origin !== expected.origin || location.pathname !== expected.pathname || location.search !== expected.search) return;
++    if (/Vercel Security Checkpoint|Just a moment/i.test(document.title)) return;
++    try {
++      var nodes = Array.from(document.querySelectorAll(config.selector));
++      var text = config.text.replace(/\\s+/g, ' ').trim();
++      var ready = nodes.some(function(node) {
++        var content = (node.textContent || '').replace(/\\s+/g, ' ').trim();
++        return !text || (config.exact ? content === text : content.includes(text));
++      });
++      if (ready && document.readyState === 'complete') send({html: document.documentElement.outerHTML});
++    } catch (error) { send({error: 'The website page could not be read.'}); }
++  }
++  function schedule() {
++    clearTimeout(timer);
++    timer = setTimeout(inspect, 200);
++  }
++  observer = new MutationObserver(schedule);
++  observer.observe(document.documentElement, {childList:true, subtree:true, characterData:true});
++  window.addEventListener('load', schedule, {once:true});
++  schedule();
++})(); true;
++`;
+diff --git a/src/plugins/pluginManager.ts b/src/plugins/pluginManager.ts
+index d77c204..11eaa6a 100644
+--- a/src/plugins/pluginManager.ts
++++ b/src/plugins/pluginManager.ts
+@@ -27,6 +27,7 @@ import { defaultCover } from './helpers/constants';
+ import { downloadFile, fetchApi, fetchProto, fetchText } from './helpers/fetch';
+ import { FilterTypes } from './types/filterTypes';
+ import { isUrlAbsolute } from './helpers/isAbsoluteUrl';
++import { fetchBrowserPage, type BrowserPageOptions } from './helpers/browser';
+ 
+ const packages: Record<string, any> = {
+   'htmlparser2': { Parser },
+@@ -45,6 +46,16 @@ const packages: Record<string, any> = {
+ const initPlugin = (pluginId: string, rawCode: string) => {
+   try {
+     const _require = (packageName: string) => {
++      if (packageName === '@libs/browser') {
++        return {
++          supportsBrowserFetch: true,
++          fetchBrowser: (url: string, options: BrowserPageOptions) => {
++            const source = plugins[pluginId];
++            if (!source) throw new Error(`Unknown plugin: ${pluginId}`);
++            return fetchBrowserPage(source.name, source.site, url, options);
++          },
++        };
++      }
+       if (packageName === '@libs/storage') {
+         return {
+           storage: new Storage(pluginId),
