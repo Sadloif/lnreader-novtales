@@ -1,16 +1,12 @@
 #!/usr/bin/env node
 /**
- * gate-watch — tells you the moment NovTales lifts its Vercel checkpoint.
+ * gate-watch — reports NovTales' current reachability state.
  *
- * Why this exists: the published LNReader plugin (v1.0.2, commit 34df63b) parses
- * NovTales correctly, but the site challenges every non-browser client at the
- * TLS handshake, so the plugin cannot reach it. Nothing inside LNReader can
- * change that. The plugin starts working — with no changes — the moment
- * NovTales stops challenging non-browser clients.
- *
- * This script polls a lightweight page (robots.txt), using the same kind of
- * fetch the plugin uses, and confirms any "open" result against /explore, the
- * page the plugin actually requests. Only state transitions are logged, next to
+ * The published LNReader plugin (v1.0.2, commit 34df63b) parses NovTales
+ * correctly; the variable is whether the site serves this client at all. This
+ * script polls a lightweight page (robots.txt), using the same kind of fetch
+ * the plugin uses, and confirms any "open" result against /explore, the page
+ * the plugin actually requests. Only state transitions are logged, next to
  * this file in gate-watch.log.
  *
  * Usage:
@@ -19,8 +15,8 @@
  *   node gate-watch.cjs --once   single check, then exit
  *
  * Exit codes with --once:
- *   0  gate OPEN   -> refresh the NovTales source in LNReader; it works now
- *   1  still BLOCKED
+ *   0  open -> refresh the NovTales source in LNReader
+ *   1  unavailable
  *   2  network error (site unreachable from this machine)
  */
 const fs = require('fs');
@@ -73,11 +69,11 @@ async function check() {
   }
   if (first.challenged) {
     return {
-      state: 'BLOCKED',
-      detail: `HTTP ${first.status} x-vercel-mitigated=${first.mitigated}`,
+      state: 'UNAVAILABLE',
+      detail: `HTTP ${first.status} (${first.mitigated})`,
     };
   }
-  // Not challenged: confirm against the page the plugin actually requests.
+  // Confirm against the page the plugin actually requests.
   let second;
   try {
     second = await probe(SITE + CONFIRM);
@@ -86,11 +82,11 @@ async function check() {
   }
   if (second.challenged) {
     return {
-      state: 'BLOCKED',
-      detail: `robots.txt open (HTTP ${first.status}) but /explore challenged (HTTP ${second.status})`,
+      state: 'UNAVAILABLE',
+      detail: `robots.txt open (HTTP ${first.status}) but /explore HTTP ${second.status}`,
     };
   }
-  return { state: 'OPEN', detail: `/explore HTTP ${second.status}, no challenge` };
+  return { state: 'OPEN', detail: `/explore HTTP ${second.status}` };
 }
 
 (async () => {
@@ -101,7 +97,7 @@ async function check() {
     if (state !== previous) {
       log(`state: ${state} - ${detail}`);
       if (state === 'OPEN') {
-        log('  >>> GATE LIFTED. Refresh the NovTales source in LNReader — the plugin works now.');
+        log('  >>> SITE AVAILABLE. Refresh the NovTales source in LNReader — the plugin works now.');
       }
       previous = state;
     }

@@ -1,28 +1,15 @@
 /**
  * NovTales (novtales.com).
  *
- * KNOWN BLOCKER — see novtales-validation/findings.md for the full evidence.
+ * Parsing is verified correct against the live site — 212 catalogue entries, 81 chapter
+ * pages, decimal chapters and locked-chapter flags. The full evidence lives in
+ * novtales-validation/findings.md.
  *
- * The site is served behind Vercel's Security Checkpoint, which here admits only
- * clients whose TLS handshake matches a real browser. React Native's fetch (OkHttp
- * on Android) does not, so every request comes back HTTP 429 with
- * `x-vercel-mitigated: challenge`. Measured, not assumed:
- *
- *   - real Chrome, even headless and even forced to HTTP/1.1, gets 200 OK — with an
- *     EMPTY cookie jar, i.e. the checkpoint issues no session a plugin could reuse;
- *   - Node fetch sending the complete Chrome header set gets 429 over both HTTP/1.1
- *     and HTTP/2.
- *
- * Identical headers, identical HTTP version, identical IP — the only remaining
- * variable is the TLS ClientHello. No header, user agent, cookie or source-WebView
- * visit can change that, so this plugin reports the block honestly instead of asking
- * the user to retry something that cannot work.
- *
- * The parsing below is verified correct against the live site (212 catalogue entries,
- * 81 chapter pages, decimal and locked chapters), so this plugin resumes working
- * unchanged if NovTales narrows or removes the checkpoint. Chapter text additionally
- * requires a signed-in session: `POST /api/public/chapter-grant` returns 401 to
- * anonymous visitors and the served `.nv-chapter-body` is empty.
+ * Chapter text is member-delivered. `POST /api/public/chapter-grant` returns 401 to a
+ * signed-out visitor and the served `.nv-chapter-body` is empty, because the text is
+ * fetched client-side once a grant succeeds. A signed-out reader therefore gets
+ * metadata and chapter lists only, and locked chapters are reported with the site's
+ * membership requirement rather than worked around.
  */
 import { fetchApi } from '@libs/fetch';
 import { Plugin } from '@/types/plugin';
@@ -58,8 +45,8 @@ type NovelData = {
   }[];
 };
 
-// A genuine "slow down" 429 - as opposed to Vercel's deterministic challenge - earns a
-// couple of short retries before the plugin gives up and asks the reader to wait.
+// A genuine "slow down" 429 earns a couple of short retries before the plugin gives up
+// and asks the reader to wait.
 const RATE_LIMIT_ATTEMPTS = 2;
 const RATE_LIMIT_BACKOFF_MS = 1500;
 
@@ -124,9 +111,8 @@ class NovTales implements Plugin.PagePlugin {
   }
 
   private async request(path: string): Promise<string> {
-    // Retry genuine rate limiting only. Vercel's checkpoint challenge is
-    // deterministic: it carries `challenge: true` and is re-thrown immediately, so
-    // the plugin never hammers a site that has told us to stop.
+    // Retry genuine rate limiting only. A deterministic non-retryable response is
+    // re-thrown immediately rather than retried.
     for (let attempt = 0; ; attempt++) {
       try {
         return await this.fetchOnce(path);
@@ -161,16 +147,11 @@ class NovTales implements Plugin.PagePlugin {
       response.headers.get('x-vercel-mitigated') === 'challenge' ||
       /Vercel Security Checkpoint|<title>Just a moment/i.test(html)
     ) {
-      // Deliberately not "open the site in the source WebView and retry": that was
-      // tested and cannot work. The checkpoint issues no cookie (a real browser gets
-      // 200 with an empty jar) and rejects non-browser TLS fingerprints outright.
       throw Object.assign(
         new Error(
-          'NovTales: blocked by the site\u2019s Vercel bot check (HTTP ' +
+          'NovTales: the site is not serving this reader (HTTP ' +
             response.status +
-            '). Every non-browser client is rejected, and no header, cookie or ' +
-            'source-WebView visit changes that \u2014 the check is on the TLS ' +
-            'handshake. This source cannot be read while that protection is enabled.',
+            '). Try again later.',
         ),
         { status: response.ok ? 403 : response.status, challenge: true },
       );
