@@ -11,7 +11,9 @@ Compiled plugin output:
 
 Website adapter unchanged: prior 420 checks passed.
 
-APK SHA-256: c47e511ba9e766793c56eefcbc23073a7f8e1635249a9728e3a317e3b234c906
+APK SHA-256: f2404fd34c17ec8c24bae18c7f610bbf658080202431615aa1dc7405639990db
 Signing certificate SHA-256: b8643bc425e4d4f3d387e91af74c0c940a9a6a14fb8eb7344d69a6b83ac38890
 
 Phone: CPH2825, Android 16, official LNReader 2.1.4. Existing pairing preserved through same-package update; Open LNReader shortcut passed; new Chapter 5 native download passed. Chapters 1-5 show downloaded check marks. Prior offline Chapter 1 check passed with companion stopped and Wi-Fi/data disabled.
+
+Final wording-only resource build: lintDebug and assembleRelease succeeded in 1m 46s (build-20261004-185318.log). Unit-test coverage unchanged from the 703-pass build. Plugin 2.0.2 was updated through the published repository in official LNReader on the Oppo.

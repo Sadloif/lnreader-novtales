@@ -6,7 +6,7 @@ Your Oppo is already paired. Updating either app keeps the saved key. These step
 
 1. Open **NovTales Companion**, press **Start**, then **Copy pairing key**. A guide appears; tap **Open LNReader**.
 2. In official LNReader, choose **Browse → Sources → NovTales**.
-3. Choose **Popular**. Close the search box if it is open, then tap **Filter** at the bottom of the catalogue.
+3. Tap the **NovTales source name** to open its catalogue, close the search box if it is open, then tap **Filter** at the bottom.
 4. Long-press the **Companion pairing key (paste here)** field and tap **Paste**. If a previous key is present, select all and replace it.
 5. Tap **Filter** at the top-right of the filter panel. This saves the key and loads the catalogue.
 
@@ -18,4 +18,3 @@ Keep the companion running while fetching new content. Keep LNReader open for ba
 
 This companion supports **NovTales only**. Other LNReader sources continue to work as usual through their own plugins; they do not use this companion. Adding another site would require a site-specific companion adapter and a compatible plugin.
 
-![The guide shown after copying the key](novtales-companion/docs/evidence/pairing-guide.png)

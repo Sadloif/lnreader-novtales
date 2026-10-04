@@ -47,7 +47,7 @@ The required public-chapter download and offline-open gate passed in the unmodif
 
 The companion uses Android's dataSync foreground-service type with its normal time limits, no wake lock and no battery-exemption request. A killed or stopped companion must be restarted from its own Start control. No PC is required for normal use.
 
-APK SHA-256: c47e511ba9e766793c56eefcbc23073a7f8e1635249a9728e3a317e3b234c906
+APK SHA-256: f2404fd34c17ec8c24bae18c7f610bbf658080202431615aa1dc7405639990db
 
 Signing certificate SHA-256: b8643bc425e4d4f3d387e91af74c0c940a9a6a14fb8eb7344d69a6b83ac38890
 

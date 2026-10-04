@@ -145,7 +145,7 @@ var CHAPTER_LIST_TTL_MS = 5 * 60 * 1000;
 var CHAPTER_LIST_CACHE_LIMIT = 8;
 var PAIRING_KEY_STORAGE = 'companionPairingKey';
 var NO_PAIRING_KEY_MESSAGE = 'NovTales: no pairing key saved. Open NovTales Companion, copy its pairing key, ' +
-    'then go to LNReader > Browse > Sources > NovTales > Popular > Filter. ' +
+    'then go to LNReader > Browse > Sources, tap the NovTales source name, then tap Filter. ' +
     'Long-press Companion pairing key (paste here), choose Paste, and tap Filter at the top-right of the panel to save.';
 // ---------------------------------------------------------------------------
 // Reader-facing failure messages, one per ErrorCode in core/Errors.kt

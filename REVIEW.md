@@ -23,7 +23,7 @@ Official LNReader remains the reader, library and download manager. This project
 | Pairing instructions did not identify where to paste the key. | Add numbered steps, a copy confirmation with an Open LNReader shortcut, and a clear paste field label. |
 | Lint errors would not stop packaging. | Enable failure on lint errors. |
 
-Earlier delivered APKs and source archives remain available for comparison. New releases reuse the original signing certificate; the private signing files are excluded from the source ZIP.
+The original delivered APK and source archive are retained under `dist` for comparison. New releases reuse the original signing certificate; the private signing files are excluded from the source ZIP.
 
 ## Error wording
 
@@ -39,16 +39,16 @@ Native LNReader verification also passed with the production release APK: refres
 
 A public chapter requires no sign-in. Paid chapters retain the site's own access requirements. A required check or notice is left for the user to complete in the companion. Chapters 3 and 4 also saved through the native downloader in a small screen-on batch. A brief screen-off check saved Chapter 2 but left Chapter 3 pending; screen-off batch reliability is unproven. Keep LNReader open for batch downloading. Long bulk downloads, deliberate site checks and membership were not exercised.
 
-APK SHA-256: `c47e511ba9e766793c56eefcbc23073a7f8e1635249a9728e3a317e3b234c906`.
+APK SHA-256: `f2404fd34c17ec8c24bae18c7f610bbf658080202431615aa1dc7405639990db`.
 Signing certificate SHA-256: `b8643bc425e4d4f3d387e91af74c0c940a9a6a14fb8eb7344d69a6b83ac38890`, matching the original delivery.
 
 The private rendering surface uses Android's [DisplayManager](https://developer.android.com/reference/android/hardware/display/DisplayManager) and [Presentation](https://developer.android.com/reference/android/app/Presentation) APIs. It renders only the companion's WebView, uses no screen capture, and adds no overlay or accessibility permission. Android's normal foreground-service limits still apply; see its [service timeout documentation](https://developer.android.com/develop/background-work/services/fgs/timeout).
 
 ## Installation and normal use
 
-1. Install `NovTales-Companion-0.1.2.apk` and press **Start**.
+1. Install `dist/NovTales-Companion-0.1.2.apk` and press **Start**.
 2. Install/update the NovTales source to **2.0.2** in official LNReader.
-3. Follow [the illustrated pairing guide](PAIRING.md): Copy pairing key → Open LNReader → Browse → Sources → NovTales → Popular → Filter → long-press **Companion pairing key (paste here)** → Paste → top-right **Filter** to save. Existing pairing survives updates.
+3. Follow [the pairing guide](PAIRING.md): Copy pairing key → Open LNReader → Browse → Sources → NovTales → Filter → long-press **Companion pairing key (paste here)** → Paste → top-right **Filter** to save. Existing pairing survives updates.
 4. Browse and download in LNReader. Keep the companion running while fetching new pages. Open its website only when a check or account action actually requires you.
 5. Downloaded chapters are stored by LNReader. Reading a downloaded chapter offline does not need the companion or a computer.
 

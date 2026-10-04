@@ -9,10 +9,10 @@ Use this TypeScript source plugin with NovTales Companion **0.1.2** on the same 
    `https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/plugins.min.json`
 3. Install/update NovTales to **2.0.2** from this repository.
 4. In the companion, tap **Copy pairing key**, then **Open LNReader** in the guide.
-5. In LNReader, go to **Browse → Sources → NovTales → Popular**, then tap **Filter** at the bottom.
+5. In LNReader, go to **Browse → Sources → NovTales**, then tap **Filter** at the bottom.
 6. Long-press **Companion pairing key (paste here)**, choose **Paste**, then tap **Filter** at the top-right of the panel to save.
 
-Your Oppo is already paired. Updates preserve the saved key. See [the pairing guide](PAIRING.md) for screenshots and help replacing an old key.
+Your Oppo is already paired. Updates preserve the saved key. See [the pairing guide](PAIRING.md) for help replacing an old key.
 
 The key is a local companion credential, not a NovTales account token. Public chapters do not require sign-in. Site checks, paid access and reading notices require the appropriate action in the companion website.
 
