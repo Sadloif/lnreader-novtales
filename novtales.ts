@@ -1,7 +1,7 @@
 /**
  * NovTales (novtales.com).
  *
- * Version 2.0.1 talks to the NovTales Companion app on this phone instead of
+ * Version 2.0.2 talks to the NovTales Companion app on this phone instead of
  * fetching novtales.com from LNReader. Direct fetching answered with HTTP 429 and
  * browser-verification challenges, and the chapter text is delivered to the site's
  * own reader after a member grant, so an LNReader-side request could only ever
@@ -122,7 +122,8 @@ const PAIRING_KEY_STORAGE = 'companionPairingKey';
 
 const NO_PAIRING_KEY_MESSAGE =
   'NovTales: no pairing key saved. Open NovTales Companion, copy its pairing key, ' +
-  "then paste it into this source's 'Companion pairing key' filter and refresh.";
+  'then go to LNReader > Browse > Sources > NovTales > Popular > Filter. ' +
+  'Long-press Companion pairing key (paste here), choose Paste, and tap Filter at the top-right of the panel to save.';
 
 // ---------------------------------------------------------------------------
 // Reader-facing failure messages, one per ErrorCode in core/Errors.kt
@@ -421,7 +422,7 @@ class NovTales implements Plugin.PagePlugin {
   name = 'NovTales';
   icon = 'src/en/novtales/icon.png';
   site = 'https://novtales.com';
-  version = '2.0.1';
+  version = '2.0.2';
 
   /**
    * Per-novel chapter page floors, re-read when they go stale.
@@ -457,7 +458,7 @@ class NovTales implements Plugin.PagePlugin {
   get filters(): Filters {
     return {
       pairingKey: {
-        label: 'Companion pairing key',
+        label: 'Companion pairing key (paste here)',
         type: FilterTypes.TextInput,
         value: readPairingKey(),
       },

@@ -39,7 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 /**
  * NovTales (novtales.com).
  *
- * Version 2.0.1 talks to the NovTales Companion app on this phone instead of
+ * Version 2.0.2 talks to the NovTales Companion app on this phone instead of
  * fetching novtales.com from LNReader. Direct fetching answered with HTTP 429 and
  * browser-verification challenges, and the chapter text is delivered to the site's
  * own reader after a member grant, so an LNReader-side request could only ever
@@ -145,7 +145,8 @@ var CHAPTER_LIST_TTL_MS = 5 * 60 * 1000;
 var CHAPTER_LIST_CACHE_LIMIT = 8;
 var PAIRING_KEY_STORAGE = 'companionPairingKey';
 var NO_PAIRING_KEY_MESSAGE = 'NovTales: no pairing key saved. Open NovTales Companion, copy its pairing key, ' +
-    "then paste it into this source's 'Companion pairing key' filter and refresh.";
+    'then go to LNReader > Browse > Sources > NovTales > Popular > Filter. ' +
+    'Long-press Companion pairing key (paste here), choose Paste, and tap Filter at the top-right of the panel to save.';
 // ---------------------------------------------------------------------------
 // Reader-facing failure messages, one per ErrorCode in core/Errors.kt
 // ---------------------------------------------------------------------------
@@ -319,7 +320,7 @@ var NovTales = /** @class */ (function () {
         this.name = 'NovTales';
         this.icon = 'src/en/novtales/icon.png';
         this.site = 'https://novtales.com';
-        this.version = '2.0.1';
+        this.version = '2.0.2';
         /**
          * Per-novel chapter page floors, re-read when they go stale.
          *
@@ -351,7 +352,7 @@ var NovTales = /** @class */ (function () {
         get: function () {
             return {
                 pairingKey: {
-                    label: 'Companion pairing key',
+                    label: 'Companion pairing key (paste here)',
                     type: filterInputs_1.FilterTypes.TextInput,
                     value: readPairingKey(),
                 },
