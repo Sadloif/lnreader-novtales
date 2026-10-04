@@ -20,7 +20,8 @@ Keep the companion running while fetching or downloading. Downloaded chapters ar
 
 ## Validation
 
-The 2.1.4 tagged LNReader source supports the text pairing filter. The connected Oppo CPH2825 runs Android 16 and official LNReader 2.1.4. See [REVIEW.md](REVIEW.md) for the phone evidence and remaining limits.
+The 2.1.4 tagged LNReader source supports the text pairing filter. The connected Oppo CPH2825 runs Android 16 and official LNReader 2.1.4. The release APK was paired with official LNReader; catalogue, novel details, a public chapter download and offline reading passed. The offline check stopped the companion and disabled Wi-Fi and mobile data before opening the downloaded chapter. See [REVIEW.md](REVIEW.md) for the evidence and remaining limits.
 
 The [reviewed source ZIP](https://github.com/Sadloif/lnreader-novtales/raw/refs/heads/main/NovTales-Companion-0.1.1-source.zip) includes the Kotlin companion, TypeScript plugin, build instructions and test harnesses. Release signing secrets are excluded.
+
 

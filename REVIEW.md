@@ -31,7 +31,9 @@ The long message about every non-browser client being rejected at the TLS handsh
 
 Automated validation: 703 Kotlin tests passed; the JavaScript adapter suite passed 420 checks; the revised compiled-plugin smoke suite passed 117 checks. Type checking and release packaging succeeded. Android lint reported 15 warnings and zero errors (style, unused resources, target SDK and the required JavaScript capability).
 
-On the connected Oppo CPH2825 (Android 16), using official LNReader 2.1.4 in front, the compiled plugin connected to the phone's companion and passed catalogue page separation, matching/empty search, novel metadata, page 2 and the last chapter page, confirmed end of list, and complete public chapters 3 and 4. The test novel reported 961 chapters across 20 pages, with 11 rows on the final page. Chapter 2 also completed with the companion website closed. These were live phone API/compiled-plugin tests; native LNReader import, download and offline reading are recorded separately once performed.
+On the connected Oppo CPH2825 (Android 16), using official LNReader 2.1.4 in front, the compiled plugin connected to the phone's companion and passed catalogue page separation, matching/empty search, novel metadata, page 2 and the last chapter page, confirmed end of list, and complete public chapters 3 and 4. The test novel reported 961 chapters across 20 pages, with 11 rows on the final page. Chapter 2 also completed with the companion website closed. These were live phone API/compiled-plugin tests.
+
+Native LNReader verification also passed with the production release APK: refreshed the existing public repository, updated NovTales, copied and pasted the companion pairing key, loaded the catalogue and novel details, and downloaded Chapter 1 of Surviving the Game as a Barbarian. LNReader displayed its downloaded check mark. With the companion force-stopped and both Wi-Fi and mobile data disabled, the previously unopened downloaded chapter rendered in LNReader. Connectivity was restored and the companion restarted afterward. The test novel was newly added to the library; existing library records were preserved.
 
 A public chapter requires no sign-in. Paid chapters retain the site's own access requirements. A required check or notice is left for the user to complete in the companion. Long bulk downloads, deliberate site checks, membership and screen-off duration were not exercised in this short test.
 
@@ -48,4 +50,5 @@ The private rendering surface uses Android's [DisplayManager](https://developer.
 4. Browse and download in LNReader. Keep the companion running while fetching new pages. Open its website only when a check or account action actually requires you.
 5. Downloaded chapters are stored by LNReader. Reading a downloaded chapter offline does not need the companion or a computer.
 
-The plugin's published repository URL remains unchanged. The local files do not update that public repository by themselves; publication and phone import are recorded separately rather than assumed.
+Companion 0.1.1, plugin 2.0.1 and the source ZIP were published to [Sadloif/lnreader-novtales](https://github.com/Sadloif/lnreader-novtales) on 4 October 2026 with the owner's approval. The existing repository URL and source identity remain unchanged. The release APK and repository update were installed on the connected Oppo and paired with official LNReader.
+
