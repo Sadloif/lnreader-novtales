@@ -27,3 +27,8 @@ TypeScript checking, formatting and ES5/CommonJS production compilation passed. 
 Published compiled-plugin SHA-256: `64682fc09d6fa46d62b628fb93d953525f65db1cfdd5141c6974304b77c2d016`.
 
 These are compiled-plugin tests with a simulated companion, not a fresh live website or Oppo UI test. No phone was connected during this update. Companion 0.1.2 and the previous plugin had already passed live public chapter download/offline tests on the Oppo; those results do not prove this new setting's phone behavior.
+
+
+## Follow-up phone test, 5 October 2026
+
+The connected Oppo completed a live 961-title, 20-index-page Barbarian request in approximately 104 seconds. Refresh in official LNReader displayed 961 chapters together and retained Continue reading at chapter 3. The newest title is chapter 944.5, including decimal entries. The separate public-novel browsing failure was traced to the companion and repaired in companion 0.1.3; see [the companion repair record](COMPANION_0.1.3.md). The plugin binary remains 2.1.0.
