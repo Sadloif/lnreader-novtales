@@ -1,0 +1,195 @@
+
+1. Instance identity
+  ok   id
+  ok   name
+  ok   site
+  ok   version
+  ok   filters declares a Text filter
+  ok   resolveUrl points at the real website
+
+2. No saved pairing key
+  ok   popularNovels asks for a key
+  ok   no request was sent without a key
+
+3. popularNovels persists the filter value, then uses it
+  ok   dedupe and path validation leave two items
+  ok   cover falls back to defaultCover
+  ok   key was persisted trimmed
+  ok   request goes to the loopback companion
+  ok   Authorization header carries the stored key
+  ok   Content-Type is application/json on POST
+  ok   poll also carries Authorization
+  ok   job body carries operation/page/sort
+
+4. An empty filter field does not wipe a saved key
+  ok   saved key survived
+
+5. parseNovel reads the key from storage, with no filter argument
+  ok   path preserved
+  ok   genres stay a string
+  ok   status is known
+  ok   rating is a number or absent
+  ok   totalPages is ceil(120 / 50) = 3, not the site's own 12
+  ok   chapters empty for a paged source
+  ok   parseNovel made exactly one chapters job
+  ok   that one job asked for page 1
+
+6. parsePage is plugin-side paging, not a mirror of the site
+  ok   parsePage(1) and parsePage(2) are DIFFERENT lists
+  ok   page 1 holds 50 chapters
+  ok   page 2 holds 50 chapters
+  ok   the last page holds the 20 that remain
+  ok   page 1 starts at chapter 1
+  ok   page 2 starts at chapter 51
+  ok   page 3 ends at chapter 120
+  ok   page 2 repeats nothing from page 1
+  ok   the three pages cover the novel exactly once
+  ok   each page is ascending
+  ok   page 1 was served from the cache parseNovel warmed - no new job
+  ok   pages 2 and 3 each cost exactly one chapters job
+  ok   a page past the end is empty
+  ok   a page past the end costs no companion call
+  ok   page 1 and page 2 are still different after caching
+  ok   a cold cache fetches page 1 then page 2, in order
+  ok   a cold cache still yields two different pages
+
+6b. Chapters within a page keep their exact shape
+  ok   four entries dedupe to three
+  ok   decimal chapter path preserved exactly
+  ok   decimal chapter number read back out of the path
+  ok   ascending despite arriving 12.5 first
+  ok   library paths are unchanged: /novel/{slug} and /chapter/{slug}-{number}
+
+6c. NovelFire-style single-page setting
+  ok   native plugin setting is an opt-in Switch
+  ok   961 chapters are reported on one reader page
+  ok   every chapter path occurs once
+  ok   full list includes chapters beyond 50 through 961
+  ok   all chapters have the reader page 1 for database migration
+  ok   each companion index page is fetched once in sequence
+  ok   parsePage(1) returns the cached whole list
+  ok   single-page mode has no second page
+  ok   turning the setting off takes effect without reloading the plugin
+  ok   turning it off restores normal metadata pagination
+  ok   turning it off migrates existing rows back after a restart
+  ok   a confirmed empty novel still has one empty page
+  ok   a cold parsePage also gathers every page
+  ok   full-list repeated is an explicit failure
+  ok   full-list repeated stops before page 3 and drops the snapshot
+  ok   full-list repeated can retry cleanly
+  ok   full-list missing is an explicit failure
+  ok   full-list missing stops before page 3 and drops the snapshot
+  ok   full-list missing can retry cleanly
+  ok   full-list changed is an explicit failure
+  ok   full-list changed stops before page 3 and drops the snapshot
+  ok   full-list changed can retry cleanly
+  ok   full-list page-count is an explicit failure
+  ok   full-list page-count stops before page 3 and drops the snapshot
+  ok   full-list page-count can retry cleanly
+  ok   full-list verification is an explicit failure
+  ok   full-list verification stops before page 3 and drops the snapshot
+  ok   full-list verification can retry cleanly
+
+6d. An unreadable chapter index stays an explicit failure
+  ok   no invented page count after a refused index
+
+6e. (b) chapterLists and novelPages are evicted together
+  ok   novel A knows its real page count first
+  ok   page 2 of an EVICTED novel is fetched, not answered empty
+  ok   and it really is chapters 51-100
+  ok   the compiled artifact prunes novelPages as well as chapterLists
+  ok   a degraded novel still has a bounded page-count entry
+
+6f. Empty pages and broken parsers are different outcomes
+  ok   a confirmed empty catalogue page is empty
+  ok   catalogue layout failures are visible
+  ok   search layout failures are visible
+  ok   a real catalogue failure still surfaces
+  ok   a browser check on the catalogue still surfaces
+  ok   SITE_CHANGED from `chapters` is still reported
+
+6g. (d) A body of nothing but entities is not chapter text
+  ok   refused: empty
+  ok   refused: whitespace
+  ok   refused: markup only
+  ok   refused: comment only
+  ok   refused: nbsp only
+  ok   refused: a named entity on its own
+  ok   refused: a dash entity on its own
+  ok   refused: an ellipsis entity on its own
+  ok   refused: a decimal numeric entity
+  ok   refused: a hex numeric entity
+  ok   refused: a zero-width space entity
+  ok   refused: a mixture of entities
+  ok   refused: entities inside markup
+  ok   accepted: real words around an entity
+  ok   accepted: a bare ampersand in prose
+  ok   accepted: text with no entities at all
+  ok   accepted: maths made of entities
+
+6h. Mixed version: a NEW plugin against an OLD companion
+  ok   parseNovel pages the novel ITSELF instead of the site's 12-per-page partition
+  ok   the three pages are 50 / 50 / 20, not 120 / 120 / 120
+  ok   300 chapter entries are not returned for 120 chapters
+  ok   and they are the right ones, in order
+  ok   a page past the end is empty
+  ok   and once the novel is laid out locally, every page is free
+  ok   a 50-chapter novel is reported as one page
+  ok   page 2 is empty, not the same 50 chapters again
+
+7. parseChapter correctness gate
+  ok   complete chapter returned verbatim
+  ok   complete:false is rejected
+  ok   missing complete flag is rejected
+  ok   different chapter path is rejected
+  ok   different novel slug is rejected
+  ok   reported chapterNumber mismatch is rejected
+  ok   empty content is rejected
+  ok   markup with no text is rejected
+  ok   numerically equal decimal spelling is accepted
+
+8. needs_user requires an explicit retry
+  ok   needs_user throws
+  ok   polled exactly once, no retry loop
+  ok   needs_user message points at the companion
+
+9. needs_user for SIGN_IN_REQUIRED is equally terminal
+  ok   SIGN_IN_REQUIRED is not retried
+
+10. Companion unavailable
+  ok   network failure becomes COMPANION_UNAVAILABLE
+
+11. HTTP error envelope (nested under `error`, as the server sends it)
+  ok   401 surfaces UNAUTHORIZED, not INTERNAL
+  ok   503 surfaces COMPANION_UNAVAILABLE, not INTERNAL
+  ok   a nested QUEUE_FULL keeps its retryAfterMs
+  ok   402 never yields a preview
+  ok   RATE_LIMITED is reported, not retried here
+  ok   a flat envelope is still understood, though the server never sends one
+  ok   a nested INTERNAL is still INTERNAL
+
+11b. A job-level failure nests under `error` too
+  ok   a failed job reports its own code, not INTERNAL
+
+12. API version mismatch
+  ok   apiVersion mismatch is rejected, not misread
+
+13. QUEUE_FULL waits and retries a bounded number of times
+  ok   succeeded after two QUEUE_FULL retries
+  ok   QUEUE_FULL gives up at the bound
+  ok   exactly 4 enqueue attempts (1 + 3 retries)
+
+14. Catalogue falls back when the sort vocabulary is rejected
+  ok   second catalogue call omits sort
+
+15. Cancellation
+  ok   popularNovels returns an empty list
+  ok   searchNovels returns an empty list
+  ok   parsePage returns empty chapters
+  ok   parseChapter refuses to hand back empty HTML
+
+16. A stuck job is bounded, not polled forever
+  ok   a job that never settles times out
+  ok   bounded wait honoured
+
+145 passed, 0 failed

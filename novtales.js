@@ -1,4 +1,15 @@
 "use strict";
+var __assign = (this && this.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
+};
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -37,44 +48,14 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 /**
- * NovTales (novtales.com).
+ * NovTales 2.1.0 for official LNReader, using the on-phone companion API.
+ * Requests go to http://127.0.0.1:5301 with the saved pairing key. The companion
+ * owns the website WebView/session and stops for website checks and notices.
  *
- * Version 2.0.2 talks to the NovTales Companion app on this phone instead of
- * fetching novtales.com from LNReader. Direct fetching answered with HTTP 429 and
- * browser-verification challenges, and the chapter text is delivered to the site's
- * own reader after a member grant, so an LNReader-side request could only ever
- * return a preview. The companion owns the WebView, the session and the site's
- * rate limits; this plugin owns the local transport and the LNReader shapes.
- *
- * Transport: http://127.0.0.1:5301, `Authorization: Bearer <pairing key>`.
- * Requests are asynchronous jobs: POST /v1/jobs returns 202 and a job id, then
- * GET /v1/jobs/{id} is polled once a second, easing to once every two seconds,
- * with a bounded total wait. Every request reads the pairing key from plugin
- * storage at call time; no key is ever compiled into this file.
- *
- * Paths are unchanged from 1.0.3 (`/novel/{slug}`, `/chapter/{slug}-{number}`),
- * so library entries created by the old plugin keep resolving after the update.
- *
- * Pagination is plugin-side. The companion slices its chapter index to the page
- * that was asked for, this plugin asks for `page: 1` once per novel to learn the
- * real chapter count, and reports `totalPages = ceil(count / 50)`. Earlier
- * versions mirrored the site's newest-first page numbers against the reader's
- * oldest-first ones, which produced byte-identical chapter lists for every page
- * and one full WebView index crawl per page.
- *
- * The site's own `chapterTotalPages` is a 12-per-page partition of the same
- * novel, so it is NOT a page count in this plugin's partition and is never
- * reported as one - doing so turned a degraded path into a truncation path.
- * Every page count this plugin reports comes from a chapter count; where none
- * is known, `parseNovel` reports a deliberate floor (`DEGRADED_TOTAL_PAGES`)
- * that can only over-report, because over-reporting costs one empty `chapters`
- * job and under-reporting hides the rest of the novel until the cache expires.
- *
- * A companion that predates that paging fix ignores `page` and re-serves the
- * whole novel. `chapterPage` recognises that (more than one page's worth, or a
- * page repeating an earlier one) and lays the novel out as pages locally, so
- * the plugin-first upgrade order degrades to correct-but-slower instead of
- * returning the same 120 chapters for every page.
+ * Normal mode exposes ascending pages of 50 chapter titles. The optional
+ * singlePage setting collects every index page sequentially and returns one
+ * complete reader page. Chapter bodies are still downloaded separately.
+ * Existing /novel/{slug} and /chapter/{slug}-{number} paths remain unchanged.
  */
 var fetch_1 = require("@libs/fetch");
 var storage_1 = require("@libs/storage");
@@ -111,6 +92,8 @@ var POLL_FAST_POLLS = 10;
  */
 var METADATA_BUDGET_MS = 95000;
 var CHAPTER_BUDGET_MS = 175000;
+/** Bound the optional full-index crawl as well as each individual page job. */
+var FULL_INDEX_BUDGET_MS = 10 * 60 * 1000;
 /** QUEUE_FULL asks for a short wait and a retry, never for more browser work. */
 var QUEUE_FULL_RETRIES = 3;
 var QUEUE_FULL_RETRY_AFTER_MS = 3000;
@@ -320,7 +303,15 @@ var NovTales = /** @class */ (function () {
         this.name = 'NovTales';
         this.icon = 'src/en/novtales/icon.png';
         this.site = 'https://novtales.com';
-        this.version = '2.0.2';
+        this.version = '2.1.0';
+        // Uses LNReader's native plugin-settings screen, like NovelFire.
+        this.pluginSettings = {
+            singlePage: {
+                value: false,
+                label: 'Force load all chapters on a single page (slower; refresh novel after changing)',
+                type: 'Switch',
+            },
+        };
         /**
          * Per-novel chapter page floors, re-read when they go stale.
          *
@@ -342,6 +333,10 @@ var NovTales = /** @class */ (function () {
          */
         this.chapterLists = {};
     }
+    NovTales.prototype.singlePageEnabled = function () {
+        // Read at call time: changing the switch does not require restarting LNReader.
+        return storage_1.storage.get('singlePage') === true;
+    };
     Object.defineProperty(NovTales.prototype, "filters", {
         /**
          * The runtime shows this as a text field on the source's filter sheet and sends
@@ -375,9 +370,14 @@ var NovTales = /** @class */ (function () {
                 switch (_a.label) {
                     case 0:
                         _a.trys.push([0, , 2, 3]);
-                        return [4 /*yield*/, Promise.race([promise, new Promise(function (_, reject) {
-                                    timer = setTimeout(function () { return reject(failure('COMPANION_UNAVAILABLE', 'NovTales: the companion connection timed out. Open the companion and retry.', true)); }, 10000);
-                                })])];
+                        return [4 /*yield*/, Promise.race([
+                                promise,
+                                new Promise(function (_, reject) {
+                                    timer = setTimeout(function () {
+                                        return reject(failure('COMPANION_UNAVAILABLE', 'NovTales: the companion connection timed out. Open the companion and retry.', true));
+                                    }, 10000);
+                                }),
+                            ])];
                     case 1: return [2 /*return*/, _a.sent()];
                     case 2:
                         if (timer !== undefined)
@@ -404,9 +404,9 @@ var NovTales = /** @class */ (function () {
                         return [4 /*yield*/, this.bounded((0, fetch_1.fetchApi)(COMPANION_ORIGIN + route, {
                                 method: (init === null || init === void 0 ? void 0 : init.method) || 'GET',
                                 headers: {
-                                    'Authorization': 'Bearer ' + key,
+                                    Authorization: 'Bearer ' + key,
                                     'Content-Type': 'application/json',
-                                    'Accept': 'application/json',
+                                    Accept: 'application/json',
                                 },
                                 body: init === null || init === void 0 ? void 0 : init.body,
                             }))];
@@ -466,7 +466,9 @@ var NovTales = /** @class */ (function () {
         // internal error" instead of "copy the pairing key again". Read the nested
         // shape first and fall back to a flat one so both are understood.
         var nested = body.error;
-        var envelope = nested && typeof nested === 'object' ? nested : {};
+        var envelope = nested && typeof nested === 'object'
+            ? nested
+            : {};
         var code = String(envelope.code || body.code || 'INTERNAL').toUpperCase();
         var base = MESSAGES[code] || 'NovTales: the companion reported ' + code + '.';
         var detail = asText(envelope.message) || asText(body.message);
@@ -478,7 +480,9 @@ var NovTales = /** @class */ (function () {
         var retryable = rawRetryable !== undefined
             ? rawRetryable
             : RETRYABLE_CODES.indexOf(code) !== -1;
-        return failure(code, detail ? base + ' (' + detail + ')' : base, retryable, asNumber(envelope.retryAfterMs) || asNumber(body.retryAfterMs) || retryAfterMs);
+        return failure(code, detail ? base + ' (' + detail + ')' : base, retryable, asNumber(envelope.retryAfterMs) ||
+            asNumber(body.retryAfterMs) ||
+            retryAfterMs);
     };
     /** Enqueue one operation and wait for it, bounded by `budgetMs`. */
     NovTales.prototype.runJob = function (operation, fields, budgetMs) {
@@ -641,7 +645,9 @@ var NovTales = /** @class */ (function () {
         var cached = this.chapterLists[path];
         if (!cached)
             return undefined;
-        return Date.now() - cached.checkedAt < CHAPTER_LIST_TTL_MS ? cached : undefined;
+        return Date.now() - cached.checkedAt < CHAPTER_LIST_TTL_MS
+            ? cached
+            : undefined;
     };
     /**
      * Fetches one 1-based page of the novel's chapter list, or serves it from the
@@ -664,9 +670,10 @@ var NovTales = /** @class */ (function () {
      *
      * Neither can write over a count the companion actually sent.
      */
-    NovTales.prototype.chapterPage = function (path, page) {
-        return __awaiter(this, void 0, void 0, function () {
+    NovTales.prototype.chapterPage = function (path_1, page_1) {
+        return __awaiter(this, arguments, void 0, function (path, page, budgetMs) {
             var cache, held, result, _a, chapters, entry, count, pages, wholeNovel, total, i;
+            if (budgetMs === void 0) { budgetMs = CHAPTER_BUDGET_MS; }
             return __generator(this, function (_b) {
                 switch (_b.label) {
                     case 0:
@@ -676,7 +683,7 @@ var NovTales = /** @class */ (function () {
                         if (held)
                             return [2 /*return*/, held];
                         _a = asObject;
-                        return [4 /*yield*/, this.runJob('chapters', { path: path, page: page }, CHAPTER_BUDGET_MS)];
+                        return [4 /*yield*/, this.runJob('chapters', { path: path, page: page }, budgetMs)];
                     case 1:
                         result = _a.apply(void 0, [_b.sent()]);
                         chapters = this.chapterItems(result);
@@ -749,7 +756,9 @@ var NovTales = /** @class */ (function () {
         var paths = Object.keys(this.chapterLists);
         if (paths.length > CHAPTER_LIST_CACHE_LIMIT) {
             paths
-                .sort(function (a, b) { return _this.chapterLists[a].checkedAt - _this.chapterLists[b].checkedAt; })
+                .sort(function (a, b) {
+                return _this.chapterLists[a].checkedAt - _this.chapterLists[b].checkedAt;
+            })
                 .slice(0, paths.length - CHAPTER_LIST_CACHE_LIMIT)
                 .forEach(function (path) {
                 delete _this.chapterLists[path];
@@ -789,6 +798,77 @@ var NovTales = /** @class */ (function () {
         }
         return list;
     };
+    /** Gather index pages sequentially; never hand LNReader a partial full list. */
+    NovTales.prototype.allChapters = function (path) {
+        return __awaiter(this, void 0, void 0, function () {
+            var deadline, list, seen, initial, totalPages, count, page, remaining, chapters, cache, _i, chapters_1, chapter, error_4;
+            var _a;
+            return __generator(this, function (_b) {
+                switch (_b.label) {
+                    case 0:
+                        deadline = Date.now() + FULL_INDEX_BUDGET_MS;
+                        list = [];
+                        seen = {};
+                        initial = this.chapterCache(path);
+                        totalPages = initial === null || initial === void 0 ? void 0 : initial.totalPages;
+                        count = initial === null || initial === void 0 ? void 0 : initial.chapterCount;
+                        if (totalPages === undefined) {
+                            throw failure('SITE_CHANGED', 'NovTales: the full chapter count is unavailable. Refresh the novel and retry.', true);
+                        }
+                        _b.label = 1;
+                    case 1:
+                        _b.trys.push([1, 6, , 7]);
+                        page = 1;
+                        _b.label = 2;
+                    case 2:
+                        if (!(page <= totalPages)) return [3 /*break*/, 5];
+                        remaining = deadline - Date.now();
+                        if (remaining <= 0)
+                            throw failure('TIMEOUT', 'NovTales: loading all chapter titles took too long. Keep the companion running and refresh the novel to retry.', true);
+                        return [4 /*yield*/, this.chapterPage(path, page, Math.min(CHAPTER_BUDGET_MS, remaining))];
+                    case 3:
+                        chapters = _b.sent();
+                        cache = this.chapterCache(path);
+                        if ((cache === null || cache === void 0 ? void 0 : cache.totalPages) !== totalPages ||
+                            (cache === null || cache === void 0 ? void 0 : cache.chapterCount) !== count ||
+                            (count !== undefined &&
+                                chapters.length !==
+                                    Math.min(CHAPTER_PAGE_SIZE, Math.max(0, count - (page - 1) * CHAPTER_PAGE_SIZE))) ||
+                            (count === undefined &&
+                                page < totalPages &&
+                                chapters.length !== CHAPTER_PAGE_SIZE)) {
+                            throw failure('SITE_CHANGED', 'NovTales: the chapter index changed or a page was incomplete. Refresh the novel to retry; the full list was not saved.', true);
+                        }
+                        for (_i = 0, chapters_1 = chapters; _i < chapters_1.length; _i++) {
+                            chapter = chapters_1[_i];
+                            if (seen[chapter.path] ||
+                                ((_a = chapterParts(chapter.path)) === null || _a === void 0 ? void 0 : _a.slug) !== novelSlug(path)) {
+                                throw failure('SITE_CHANGED', 'NovTales: the chapter index repeated a page or returned another novel. The full list was not saved.', true);
+                            }
+                            seen[chapter.path] = true;
+                            list.push(__assign(__assign({}, chapter), { page: '1' }));
+                        }
+                        _b.label = 4;
+                    case 4:
+                        page++;
+                        return [3 /*break*/, 2];
+                    case 5:
+                        if (count !== undefined && list.length !== count) {
+                            throw failure('SITE_CHANGED', 'NovTales: the full chapter list did not match the reported count. Refresh the novel to retry; the full list was not saved.', true);
+                        }
+                        list.sort(function (a, b) { return (a.chapterNumber || 0) - (b.chapterNumber || 0); });
+                        return [2 /*return*/, list];
+                    case 6:
+                        error_4 = _b.sent();
+                        // Retrying must start from a fresh snapshot after a changing/broken index.
+                        delete this.chapterLists[path];
+                        delete this.novelPages[path];
+                        throw error_4;
+                    case 7: return [2 /*return*/];
+                }
+            });
+        });
+    };
     /**
      * How many pages this novel has, from the chapter cache when it knows and from
      * the floor `parseNovel` recorded otherwise.
@@ -827,7 +907,7 @@ var NovTales = /** @class */ (function () {
     };
     NovTales.prototype.catalogue = function (pageNo, showLatestNovels) {
         return __awaiter(this, void 0, void 0, function () {
-            var fields, error_4;
+            var fields, error_5;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -841,9 +921,9 @@ var NovTales = /** @class */ (function () {
                         return [4 /*yield*/, this.browse('catalogue', fields)];
                     case 2: return [2 /*return*/, _a.sent()];
                     case 3:
-                        error_4 = _a.sent();
-                        if (asObject(error_4).code !== 'BAD_REQUEST')
-                            throw error_4;
+                        error_5 = _a.sent();
+                        if (asObject(error_5).code !== 'BAD_REQUEST')
+                            throw error_5;
                         // The companion does not know our sort vocabulary; fall back to its own
                         // default ordering once rather than losing the source.
                         return [2 /*return*/, this.browse('catalogue', { page: pageNo })];
@@ -855,8 +935,10 @@ var NovTales = /** @class */ (function () {
     // -- Plugin.PagePlugin ----------------------------------------------------
     NovTales.prototype.popularNovels = function (pageNo_1) {
         return __awaiter(this, arguments, void 0, function (pageNo, _a) {
-            var supplied, error_5;
-            var _b = _a === void 0 ? { filters: this.filters } : _a, showLatestNovels = _b.showLatestNovels, filters = _b.filters;
+            var supplied, error_6;
+            var _b = _a === void 0 ? {
+                filters: this.filters,
+            } : _a, showLatestNovels = _b.showLatestNovels, filters = _b.filters;
             return __generator(this, function (_c) {
                 switch (_c.label) {
                     case 0:
@@ -872,10 +954,10 @@ var NovTales = /** @class */ (function () {
                         return [4 /*yield*/, this.catalogue(pageNo, showLatestNovels)];
                     case 2: return [2 /*return*/, _c.sent()];
                     case 3:
-                        error_5 = _c.sent();
-                        if (isCancelled(error_5))
+                        error_6 = _c.sent();
+                        if (isCancelled(error_6))
                             return [2 /*return*/, []];
-                        throw error_5;
+                        throw error_6;
                     case 4: return [2 /*return*/];
                 }
             });
@@ -883,7 +965,7 @@ var NovTales = /** @class */ (function () {
     };
     NovTales.prototype.searchNovels = function (searchTerm, pageNo) {
         return __awaiter(this, void 0, void 0, function () {
-            var query, error_6;
+            var query, error_7;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -896,10 +978,10 @@ var NovTales = /** @class */ (function () {
                         return [4 /*yield*/, this.browse('search', { query: query, page: pageNo })];
                     case 2: return [2 /*return*/, _a.sent()];
                     case 3:
-                        error_6 = _a.sent();
-                        if (isCancelled(error_6))
+                        error_7 = _a.sent();
+                        if (isCancelled(error_7))
                             return [2 /*return*/, []];
-                        throw error_6;
+                        throw error_7;
                     case 4: return [2 /*return*/];
                 }
             });
@@ -907,10 +989,10 @@ var NovTales = /** @class */ (function () {
     };
     NovTales.prototype.parseNovel = function (novelPath) {
         return __awaiter(this, void 0, void 0, function () {
-            var path, novel, _a, first, totalPages, second, statuses, status, genres, rating;
-            var _b, _c;
-            return __generator(this, function (_d) {
-                switch (_d.label) {
+            var path, novel, _a, first, totalPages, second, singlePage, layoutKey, migrateToPages, chapters, _b, statuses, status, genres, rating;
+            var _c, _d;
+            return __generator(this, function (_e) {
+                switch (_e.label) {
                     case 0:
                         path = normalisePath(novelPath);
                         if (!novelSlug(path)) {
@@ -919,27 +1001,47 @@ var NovTales = /** @class */ (function () {
                         _a = asObject;
                         return [4 /*yield*/, this.runJob('novel', { path: path }, METADATA_BUDGET_MS)];
                     case 1:
-                        novel = _a.apply(void 0, [_d.sent()]);
+                        novel = _a.apply(void 0, [_e.sent()]);
                         return [4 /*yield*/, this.chapterPage(path, 1)];
                     case 2:
-                        first = _d.sent();
-                        totalPages = (_b = this.chapterCache(path)) === null || _b === void 0 ? void 0 : _b.totalPages;
+                        first = _e.sent();
+                        totalPages = (_c = this.chapterCache(path)) === null || _c === void 0 ? void 0 : _c.totalPages;
                         if (totalPages === undefined && first.length < CHAPTER_PAGE_SIZE) {
                             totalPages = pageCountOf(first.length);
                         }
                         if (!(totalPages === undefined)) return [3 /*break*/, 4];
                         return [4 /*yield*/, this.chapterPage(path, 2)];
                     case 3:
-                        second = _d.sent();
-                        totalPages = (_c = this.chapterCache(path)) === null || _c === void 0 ? void 0 : _c.totalPages;
+                        second = _e.sent();
+                        totalPages = (_d = this.chapterCache(path)) === null || _d === void 0 ? void 0 : _d.totalPages;
                         if (totalPages === undefined && second.length < CHAPTER_PAGE_SIZE) {
                             totalPages = second.length === 0 ? 1 : 2;
                         }
-                        _d.label = 4;
+                        _e.label = 4;
                     case 4:
                         if (totalPages === undefined) {
                             throw failure('SITE_CHANGED', 'NovTales: the chapter index did not report its full size. Update the companion and retry.', true);
                         }
+                        singlePage = this.singlePageEnabled();
+                        layoutKey = 'singlePageLayout:' + path;
+                        migrateToPages = !singlePage && storage_1.storage.get(layoutKey) === true;
+                        if (!(singlePage || migrateToPages)) return [3 /*break*/, 6];
+                        return [4 /*yield*/, this.allChapters(path)];
+                    case 5:
+                        _b = _e.sent();
+                        return [3 /*break*/, 7];
+                    case 6:
+                        _b = [];
+                        _e.label = 7;
+                    case 7:
+                        chapters = _b;
+                        if (migrateToPages) {
+                            chapters.forEach(function (chapter, index) {
+                                chapter.page = String(Math.floor(index / CHAPTER_PAGE_SIZE) + 1);
+                            });
+                        }
+                        if (singlePage || migrateToPages)
+                            storage_1.storage.set(layoutKey, singlePage);
                         this.novelPages[path] = { totalPages: totalPages, checkedAt: Date.now() };
                         statuses = {
                             ongoing: novelStatus_1.NovelStatus.Ongoing,
@@ -965,8 +1067,8 @@ var NovTales = /** @class */ (function () {
                                 genres: genres,
                                 status: statuses[status] || novelStatus_1.NovelStatus.Unknown,
                                 rating: rating && rating > 0 ? rating : undefined,
-                                chapters: [],
-                                totalPages: totalPages,
+                                chapters: chapters,
+                                totalPages: singlePage ? 1 : totalPages,
                             }];
                 }
             });
@@ -974,19 +1076,29 @@ var NovTales = /** @class */ (function () {
     };
     NovTales.prototype.parsePage = function (novelPath, page) {
         return __awaiter(this, void 0, void 0, function () {
-            var path, pageNo, complete, from, known, error_7;
-            var _a;
-            return __generator(this, function (_b) {
-                switch (_b.label) {
+            var path, pageNo, complete, from, known, error_8;
+            var _a, _b;
+            return __generator(this, function (_c) {
+                switch (_c.label) {
                     case 0:
                         path = normalisePath(novelPath);
                         pageNo = Number(page);
                         if (!novelSlug(path) || !isPositiveInteger(pageNo)) {
                             return [2 /*return*/, { chapters: [] }];
                         }
-                        _b.label = 1;
+                        _c.label = 1;
                     case 1:
-                        _b.trys.push([1, 3, , 4]);
+                        _c.trys.push([1, 6, , 7]);
+                        if (!this.singlePageEnabled()) return [3 /*break*/, 4];
+                        if (pageNo !== 1)
+                            return [2 /*return*/, { chapters: [] }];
+                        return [4 /*yield*/, this.chapterPage(path, 1)];
+                    case 2:
+                        _c.sent();
+                        _a = {};
+                        return [4 /*yield*/, this.allChapters(path)];
+                    case 3: return [2 /*return*/, (_a.chapters = _c.sent(), _a)];
+                    case 4:
                         complete = this.fullChapterList(path);
                         if (complete) {
                             from = (pageNo - 1) * CHAPTER_PAGE_SIZE;
@@ -996,18 +1108,18 @@ var NovTales = /** @class */ (function () {
                         if (known !== undefined && pageNo > known) {
                             return [2 /*return*/, { chapters: [] }];
                         }
-                        _a = {};
+                        _b = {};
                         return [4 /*yield*/, this.chapterPage(path, pageNo)];
-                    case 2: 
+                    case 5: 
                     // Cache cold: one `chapters` job for this page alone. The companion slices
                     // the index it crawled, so page 1 and page 2 are different chapters.
-                    return [2 /*return*/, (_a.chapters = _b.sent(), _a)];
-                    case 3:
-                        error_7 = _b.sent();
-                        if (isCancelled(error_7))
+                    return [2 /*return*/, (_b.chapters = _c.sent(), _b)];
+                    case 6:
+                        error_8 = _c.sent();
+                        if (isCancelled(error_8))
                             return [2 /*return*/, { chapters: [] }];
-                        throw error_7;
-                    case 4: return [2 /*return*/];
+                        throw error_8;
+                    case 7: return [2 /*return*/];
                 }
             });
         });

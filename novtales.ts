@@ -1,42 +1,12 @@
 /**
- * NovTales (novtales.com).
+ * NovTales 2.1.0 for official LNReader, using the on-phone companion API.
+ * Requests go to http://127.0.0.1:5301 with the saved pairing key. The companion
+ * owns the website WebView/session and stops for website checks and notices.
  *
- * Version 2.0.2 talks to the NovTales Companion app on this phone instead of
- * fetching novtales.com from LNReader. Direct fetching answered with HTTP 429 and
- * browser-verification challenges, and the chapter text is delivered to the site's
- * own reader after a member grant, so an LNReader-side request could only ever
- * return a preview. The companion owns the WebView, the session and the site's
- * rate limits; this plugin owns the local transport and the LNReader shapes.
- *
- * Transport: http://127.0.0.1:5301, `Authorization: Bearer <pairing key>`.
- * Requests are asynchronous jobs: POST /v1/jobs returns 202 and a job id, then
- * GET /v1/jobs/{id} is polled once a second, easing to once every two seconds,
- * with a bounded total wait. Every request reads the pairing key from plugin
- * storage at call time; no key is ever compiled into this file.
- *
- * Paths are unchanged from 1.0.3 (`/novel/{slug}`, `/chapter/{slug}-{number}`),
- * so library entries created by the old plugin keep resolving after the update.
- *
- * Pagination is plugin-side. The companion slices its chapter index to the page
- * that was asked for, this plugin asks for `page: 1` once per novel to learn the
- * real chapter count, and reports `totalPages = ceil(count / 50)`. Earlier
- * versions mirrored the site's newest-first page numbers against the reader's
- * oldest-first ones, which produced byte-identical chapter lists for every page
- * and one full WebView index crawl per page.
- *
- * The site's own `chapterTotalPages` is a 12-per-page partition of the same
- * novel, so it is NOT a page count in this plugin's partition and is never
- * reported as one - doing so turned a degraded path into a truncation path.
- * Every page count this plugin reports comes from a chapter count; where none
- * is known, `parseNovel` reports a deliberate floor (`DEGRADED_TOTAL_PAGES`)
- * that can only over-report, because over-reporting costs one empty `chapters`
- * job and under-reporting hides the rest of the novel until the cache expires.
- *
- * A companion that predates that paging fix ignores `page` and re-serves the
- * whole novel. `chapterPage` recognises that (more than one page's worth, or a
- * page repeating an earlier one) and lays the novel out as pages locally, so
- * the plugin-first upgrade order degrades to correct-but-slower instead of
- * returning the same 120 chapters for every page.
+ * Normal mode exposes ascending pages of 50 chapter titles. The optional
+ * singlePage setting collects every index page sequentially and returns one
+ * complete reader page. Chapter bodies are still downloaded separately.
+ * Existing /novel/{slug} and /chapter/{slug}-{number} paths remain unchanged.
  */
 import { fetchApi } from '@libs/fetch';
 import { storage } from '@libs/storage';
@@ -79,6 +49,8 @@ const POLL_FAST_POLLS = 10;
  */
 const METADATA_BUDGET_MS = 95000;
 const CHAPTER_BUDGET_MS = 175000;
+/** Bound the optional full-index crawl as well as each individual page job. */
+const FULL_INDEX_BUDGET_MS = 10 * 60 * 1000;
 
 /** QUEUE_FULL asks for a short wait and a retry, never for more browser work. */
 const QUEUE_FULL_RETRIES = 3;
@@ -422,7 +394,22 @@ class NovTales implements Plugin.PagePlugin {
   name = 'NovTales';
   icon = 'src/en/novtales/icon.png';
   site = 'https://novtales.com';
-  version = '2.0.2';
+  version = '2.1.0';
+
+  // Uses LNReader's native plugin-settings screen, like NovelFire.
+  pluginSettings = {
+    singlePage: {
+      value: false,
+      label:
+        'Force load all chapters on a single page (slower; refresh novel after changing)',
+      type: 'Switch',
+    },
+  };
+
+  private singlePageEnabled(): boolean {
+    // Read at call time: changing the switch does not require restarting LNReader.
+    return storage.get('singlePage') === true;
+  }
 
   /**
    * Per-novel chapter page floors, re-read when they go stale.
@@ -476,11 +463,25 @@ class NovTales implements Plugin.PagePlugin {
   private async bounded<T>(promise: Promise<T>): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      return await Promise.race([promise, new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(failure('COMPANION_UNAVAILABLE',
-          'NovTales: the companion connection timed out. Open the companion and retry.', true)), 10000);
-      })]);
-    } finally { if (timer !== undefined) clearTimeout(timer); }
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                failure(
+                  'COMPANION_UNAVAILABLE',
+                  'NovTales: the companion connection timed out. Open the companion and retry.',
+                  true,
+                ),
+              ),
+            10000,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   private async companionFetch(
@@ -492,15 +493,17 @@ class NovTales implements Plugin.PagePlugin {
       throw failure('NO_PAIRING_KEY', NO_PAIRING_KEY_MESSAGE, false);
     }
     try {
-      return await this.bounded(fetchApi(COMPANION_ORIGIN + route, {
-        method: init?.method || 'GET',
-        headers: {
-          'Authorization': 'Bearer ' + key,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: init?.body,
-      }));
+      return await this.bounded(
+        fetchApi(COMPANION_ORIGIN + route, {
+          method: init?.method || 'GET',
+          headers: {
+            Authorization: 'Bearer ' + key,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: init?.body,
+        }),
+      );
     } catch (error) {
       // Nothing is listening, or the loopback connection was refused. The plugin
       // interface cannot start an Android service, so the reader must be told.
@@ -556,7 +559,9 @@ class NovTales implements Plugin.PagePlugin {
     // shape first and fall back to a flat one so both are understood.
     const nested = body.error as Record<string, unknown> | undefined;
     const envelope =
-      nested && typeof nested === 'object' ? nested : ({} as Record<string, unknown>);
+      nested && typeof nested === 'object'
+        ? nested
+        : ({} as Record<string, unknown>);
 
     const code = String(envelope.code || body.code || 'INTERNAL').toUpperCase();
     const base =
@@ -576,7 +581,9 @@ class NovTales implements Plugin.PagePlugin {
       code,
       detail ? base + ' (' + detail + ')' : base,
       retryable,
-      asNumber(envelope.retryAfterMs) || asNumber(body.retryAfterMs) || retryAfterMs,
+      asNumber(envelope.retryAfterMs) ||
+        asNumber(body.retryAfterMs) ||
+        retryAfterMs,
     );
   }
 
@@ -720,7 +727,9 @@ class NovTales implements Plugin.PagePlugin {
   private chapterCache(path: string): ChapterListCache | undefined {
     const cached = this.chapterLists[path];
     if (!cached) return undefined;
-    return Date.now() - cached.checkedAt < CHAPTER_LIST_TTL_MS ? cached : undefined;
+    return Date.now() - cached.checkedAt < CHAPTER_LIST_TTL_MS
+      ? cached
+      : undefined;
   }
 
   /**
@@ -747,6 +756,7 @@ class NovTales implements Plugin.PagePlugin {
   private async chapterPage(
     path: string,
     page: number,
+    budgetMs: number = CHAPTER_BUDGET_MS,
   ): Promise<Plugin.ChapterItem[]> {
     const cache = this.chapterCache(path);
     const held = cache?.pages[page];
@@ -754,7 +764,7 @@ class NovTales implements Plugin.PagePlugin {
     if (held) return held;
 
     const result = asObject(
-      await this.runJob('chapters', { path, page }, CHAPTER_BUDGET_MS),
+      await this.runJob('chapters', { path, page }, budgetMs),
     ) as CompanionChapterPage;
     const chapters = this.chapterItems(result);
 
@@ -835,7 +845,10 @@ class NovTales implements Plugin.PagePlugin {
     const paths = Object.keys(this.chapterLists);
     if (paths.length > CHAPTER_LIST_CACHE_LIMIT) {
       paths
-        .sort((a, b) => this.chapterLists[a].checkedAt - this.chapterLists[b].checkedAt)
+        .sort(
+          (a, b) =>
+            this.chapterLists[a].checkedAt - this.chapterLists[b].checkedAt,
+        )
         .slice(0, paths.length - CHAPTER_LIST_CACHE_LIMIT)
         .forEach(path => {
           delete this.chapterLists[path];
@@ -848,7 +861,9 @@ class NovTales implements Plugin.PagePlugin {
     const counts = Object.keys(this.novelPages);
     if (counts.length > CHAPTER_LIST_CACHE_LIMIT) {
       counts
-        .sort((a, b) => this.novelPages[a].checkedAt - this.novelPages[b].checkedAt)
+        .sort(
+          (a, b) => this.novelPages[a].checkedAt - this.novelPages[b].checkedAt,
+        )
         .slice(0, counts.length - CHAPTER_LIST_CACHE_LIMIT)
         .forEach(path => {
           delete this.novelPages[path];
@@ -873,6 +888,87 @@ class NovTales implements Plugin.PagePlugin {
       list.push.apply(list, slice);
     }
     return list;
+  }
+
+  /** Gather index pages sequentially; never hand LNReader a partial full list. */
+  private async allChapters(path: string): Promise<Plugin.ChapterItem[]> {
+    const deadline = Date.now() + FULL_INDEX_BUDGET_MS;
+    const list: Plugin.ChapterItem[] = [];
+    const seen: Record<string, boolean> = {};
+    const initial = this.chapterCache(path);
+    const totalPages = initial?.totalPages;
+    const count = initial?.chapterCount;
+    if (totalPages === undefined) {
+      throw failure(
+        'SITE_CHANGED',
+        'NovTales: the full chapter count is unavailable. Refresh the novel and retry.',
+        true,
+      );
+    }
+    try {
+      for (let page = 1; page <= totalPages; page++) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0)
+          throw failure(
+            'TIMEOUT',
+            'NovTales: loading all chapter titles took too long. Keep the companion running and refresh the novel to retry.',
+            true,
+          );
+        const chapters = await this.chapterPage(
+          path,
+          page,
+          Math.min(CHAPTER_BUDGET_MS, remaining),
+        );
+        const cache = this.chapterCache(path);
+        if (
+          cache?.totalPages !== totalPages ||
+          cache?.chapterCount !== count ||
+          (count !== undefined &&
+            chapters.length !==
+              Math.min(
+                CHAPTER_PAGE_SIZE,
+                Math.max(0, count - (page - 1) * CHAPTER_PAGE_SIZE),
+              )) ||
+          (count === undefined &&
+            page < totalPages &&
+            chapters.length !== CHAPTER_PAGE_SIZE)
+        ) {
+          throw failure(
+            'SITE_CHANGED',
+            'NovTales: the chapter index changed or a page was incomplete. Refresh the novel to retry; the full list was not saved.',
+            true,
+          );
+        }
+        for (const chapter of chapters) {
+          if (
+            seen[chapter.path] ||
+            chapterParts(chapter.path)?.slug !== novelSlug(path)
+          ) {
+            throw failure(
+              'SITE_CHANGED',
+              'NovTales: the chapter index repeated a page or returned another novel. The full list was not saved.',
+              true,
+            );
+          }
+          seen[chapter.path] = true;
+          list.push({ ...chapter, page: '1' });
+        }
+      }
+      if (count !== undefined && list.length !== count) {
+        throw failure(
+          'SITE_CHANGED',
+          'NovTales: the full chapter list did not match the reported count. Refresh the novel to retry; the full list was not saved.',
+          true,
+        );
+      }
+      list.sort((a, b) => (a.chapterNumber || 0) - (b.chapterNumber || 0));
+      return list;
+    } catch (error) {
+      // Retrying must start from a fresh snapshot after a changing/broken index.
+      delete this.chapterLists[path];
+      delete this.novelPages[path];
+      throw error;
+    }
   }
 
   /**
@@ -903,7 +999,9 @@ class NovTales implements Plugin.PagePlugin {
     operation: CompanionOperation,
     fields: JobFields,
   ): Promise<Plugin.NovelItem[]> {
-    return this.novelItems(await this.runJob(operation, fields, METADATA_BUDGET_MS));
+    return this.novelItems(
+      await this.runJob(operation, fields, METADATA_BUDGET_MS),
+    );
   }
 
   private async catalogue(
@@ -931,7 +1029,9 @@ class NovTales implements Plugin.PagePlugin {
     {
       showLatestNovels,
       filters,
-    }: Plugin.PopularNovelsOptions<typeof this.filters> = { filters: this.filters },
+    }: Plugin.PopularNovelsOptions<typeof this.filters> = {
+      filters: this.filters,
+    },
   ): Promise<Plugin.NovelItem[]> {
     // The runtime hands filter values to this method only. Saving them here is
     // what lets searchNovels, parseNovel, parsePage and parseChapter find the
@@ -989,8 +1089,26 @@ class NovTales implements Plugin.PagePlugin {
       }
     }
     if (totalPages === undefined) {
-      throw failure('SITE_CHANGED', 'NovTales: the chapter index did not report its full size. Update the companion and retry.', true);
+      throw failure(
+        'SITE_CHANGED',
+        'NovTales: the chapter index did not report its full size. Update the companion and retry.',
+        true,
+      );
     }
+    const singlePage = this.singlePageEnabled();
+    // LNReader stores a page on each existing chapter row. If this novel used
+    // single-page mode previously, move those same paths back to their normal
+    // pages when the switch is turned off, including after an app restart.
+    const layoutKey = 'singlePageLayout:' + path;
+    const migrateToPages = !singlePage && storage.get(layoutKey) === true;
+    const chapters =
+      singlePage || migrateToPages ? await this.allChapters(path) : [];
+    if (migrateToPages) {
+      chapters.forEach((chapter, index) => {
+        chapter.page = String(Math.floor(index / CHAPTER_PAGE_SIZE) + 1);
+      });
+    }
+    if (singlePage || migrateToPages) storage.set(layoutKey, singlePage);
     this.novelPages[path] = { totalPages, checkedAt: Date.now() };
 
     const statuses: Record<string, string> = {
@@ -1020,8 +1138,8 @@ class NovTales implements Plugin.PagePlugin {
       genres,
       status: statuses[status] || NovelStatus.Unknown,
       rating: rating && rating > 0 ? rating : undefined,
-      chapters: [],
-      totalPages,
+      chapters,
+      totalPages: singlePage ? 1 : totalPages,
     };
   }
 
@@ -1035,6 +1153,11 @@ class NovTales implements Plugin.PagePlugin {
     }
 
     try {
+      if (this.singlePageEnabled()) {
+        if (pageNo !== 1) return { chapters: [] };
+        await this.chapterPage(path, 1);
+        return { chapters: await this.allChapters(path) };
+      }
       // Served locally once the whole list is cached.
       const complete = this.fullChapterList(path);
       if (complete) {
