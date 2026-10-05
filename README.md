@@ -63,3 +63,14 @@ The icon images are simple initials drawn for these plugins. Signing keys, brows
 ## Other source retained in this repository
 
 The older NovTales plugin and its existing releases remain available. Its companion requirement applies only to NovTales; see [the NovTales guide](NOVTALES.md).
+
+## Retained downloads
+
+At most two published versions of each component are kept:
+
+| Component | Latest | Previous |
+| --- | --- | --- |
+| Standalone plugins | [1.0.1](https://github.com/Sadloif/lnreader-novtales/releases/tag/standalone-v1.0.1) | [1.0.0](https://github.com/Sadloif/lnreader-novtales/releases/tag/standalone-v1.0.0) |
+| NovTales companion | [0.1.4](https://github.com/Sadloif/lnreader-novtales/releases/tag/companion-v0.1.4) | [0.1.3](https://github.com/Sadloif/lnreader-novtales/releases/tag/companion-v0.1.3) |
+
+NovTales plugin 2.1.0 remains the current version. Earlier companion 0.1.1 and 0.1.2 APK/source copies have been removed from the current repository files. Historical test reports remain available.
