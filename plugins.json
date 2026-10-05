@@ -13,7 +13,7 @@
     "name": "Maehwasup",
     "site": "https://maehwasup.com",
     "lang": "English",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "url": "https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/maehwasup.js",
     "iconUrl": "https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/icons/maehwasup/icon.png"
   },
@@ -22,7 +22,7 @@
     "name": "Hen Novel Translations",
     "site": "https://hennoveltranslations.org",
     "lang": "English",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "url": "https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/hennoveltranslations.js",
     "iconUrl": "https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/icons/hennoveltranslations/icon.png"
   },
@@ -31,7 +31,7 @@
     "name": "Machine Editing (MyLasted)",
     "site": "https://mylasted.blogspot.com",
     "lang": "English",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "url": "https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/mylasted.js",
     "iconUrl": "https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/icons/mylasted/icon.png"
   }

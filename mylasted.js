@@ -39,13 +39,51 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var fetch_1 = require("@libs/fetch");
 var defaultCover_1 = require("@libs/defaultCover");
 var cheerio_1 = require("cheerio");
+function sanitizeChapter(html, base) {
+    var $ = (0, cheerio_1.load)(html, null, false);
+    $('script,style,iframe,object,embed,svg,math,form,template,noscript').remove();
+    var tags = 'p,div,span,h1,h2,h3,h4,h5,h6,br,hr,strong,em,b,i,u,s,del,small,sub,sup,blockquote,pre,code,ul,ol,li,table,thead,tbody,tfoot,tr,th,td,a,img,ruby,rt,rp'.split(',');
+    $('*').each(function (_, element) {
+        var _a;
+        var node = $(element);
+        var tag = ((_a = node.prop('tagName')) === null || _a === void 0 ? void 0 : _a.toLowerCase()) || '';
+        if (!tags.includes(tag)) {
+            node.replaceWith(node.contents());
+            return;
+        }
+        var allowed = ['title'];
+        if (tag === 'a')
+            allowed.push('href');
+        if (tag === 'img')
+            allowed.push('src', 'alt');
+        for (var _i = 0, _b = Object.keys(node.attr() || {}); _i < _b.length; _i++) {
+            var attribute_1 = _b[_i];
+            if (!allowed.includes(attribute_1))
+                node.removeAttr(attribute_1);
+        }
+        var attribute = tag === 'a' ? 'href' : tag === 'img' ? 'src' : undefined;
+        if (attribute && node.attr(attribute)) {
+            try {
+                var url = new URL(node.attr(attribute), base);
+                if (url.protocol !== 'https:' && url.protocol !== 'http:')
+                    node.removeAttr(attribute);
+                else
+                    node.attr(attribute, url.href);
+            }
+            catch (_c) {
+                node.removeAttr(attribute);
+            }
+        }
+    });
+    return $.root().html() || '';
+}
 var MachineEditing = /** @class */ (function () {
     function MachineEditing() {
         this.id = 'mylasted';
         this.name = 'Machine Editing (MyLasted)';
         this.site = 'https://mylasted.blogspot.com';
         this.icon = 'src/en/mylasted/icon.png';
-        this.version = '1.0.0';
+        this.version = '1.0.1';
     }
     MachineEditing.prototype.request = function (url) {
         return __awaiter(this, void 0, void 0, function () {
@@ -120,7 +158,7 @@ var MachineEditing = /** @class */ (function () {
     };
     MachineEditing.prototype.parseNovel = function (path) {
         return __awaiter(this, void 0, void 0, function () {
-            var $, _a, label, first, total, start, chapters, seen, feed, _b, entries, _i, entries_1, entry, href, chapterPath, number, field, name;
+            var $, _a, label, first, total, start, chapters, seen, feed, _b, entries, _i, entries_1, entry, href, chapterPath, number, section, field, name;
             var _c, _d;
             return __generator(this, function (_e) {
                 switch (_e.label) {
@@ -181,10 +219,21 @@ var MachineEditing = /** @class */ (function () {
                     case 8:
                         if (!chapters.length)
                             throw new Error('Machine Editing: no chapter entries were found.');
+                        section = function (chapter) {
+                            if (chapter.chapterNumber !== undefined)
+                                return 1;
+                            if (/prologue/i.test(chapter.name))
+                                return 0;
+                            if (/epilogue/i.test(chapter.name))
+                                return 3;
+                            return 2;
+                        };
                         chapters.sort(function (a, b) {
-                            if (a.chapterNumber !== undefined && b.chapterNumber !== undefined)
-                                return a.chapterNumber - b.chapterNumber;
-                            return (a.releaseTime || '').localeCompare(b.releaseTime || '');
+                            var _a, _b;
+                            return section(a) - section(b) ||
+                                ((_a = a.chapterNumber) !== null && _a !== void 0 ? _a : 0) - ((_b = b.chapterNumber) !== null && _b !== void 0 ? _b : 0) ||
+                                (a.releaseTime || '').localeCompare(b.releaseTime || '') ||
+                                a.path.localeCompare(b.path);
                         });
                         field = function (label) {
                             return $('#extra-info dt')
@@ -212,7 +261,7 @@ var MachineEditing = /** @class */ (function () {
     };
     MachineEditing.prototype.parseChapter = function (path) {
         return __awaiter(this, void 0, void 0, function () {
-            var $, _a, body;
+            var $, _a, body, chapter;
             return __generator(this, function (_b) {
                 switch (_b.label) {
                     case 0:
@@ -230,9 +279,10 @@ var MachineEditing = /** @class */ (function () {
                             if (/^Consider supporting me by subscribing/i.test($(element).text().trim()))
                                 $(element).remove();
                         });
-                        if (body.text().trim().length < 200)
+                        chapter = sanitizeChapter(body.html() || '', this.resolveUrl(path));
+                        if ((0, cheerio_1.load)(chapter).text().trim().length < 200)
                             throw new Error('Machine Editing: no readable public chapter was found.');
-                        return [2 /*return*/, body.html()];
+                        return [2 /*return*/, chapter];
                 }
             });
         });

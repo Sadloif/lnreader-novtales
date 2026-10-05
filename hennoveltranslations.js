@@ -39,29 +39,78 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var fetch_1 = require("@libs/fetch");
 var defaultCover_1 = require("@libs/defaultCover");
 var cheerio_1 = require("cheerio");
+function sanitizeChapter(html, base) {
+    var $ = (0, cheerio_1.load)(html, null, false);
+    $('script,style,iframe,object,embed,svg,math,form,template,noscript').remove();
+    var tags = 'p,div,span,h1,h2,h3,h4,h5,h6,br,hr,strong,em,b,i,u,s,del,small,sub,sup,blockquote,pre,code,ul,ol,li,table,thead,tbody,tfoot,tr,th,td,a,img,ruby,rt,rp'.split(',');
+    $('*').each(function (_, element) {
+        var _a;
+        var node = $(element);
+        var tag = ((_a = node.prop('tagName')) === null || _a === void 0 ? void 0 : _a.toLowerCase()) || '';
+        if (!tags.includes(tag)) {
+            node.replaceWith(node.contents());
+            return;
+        }
+        var allowed = ['title'];
+        if (tag === 'a')
+            allowed.push('href');
+        if (tag === 'img')
+            allowed.push('src', 'alt');
+        for (var _i = 0, _b = Object.keys(node.attr() || {}); _i < _b.length; _i++) {
+            var attribute_1 = _b[_i];
+            if (!allowed.includes(attribute_1))
+                node.removeAttr(attribute_1);
+        }
+        var attribute = tag === 'a' ? 'href' : tag === 'img' ? 'src' : undefined;
+        if (attribute && node.attr(attribute)) {
+            try {
+                var url = new URL(node.attr(attribute), base);
+                if (url.protocol !== 'https:' && url.protocol !== 'http:')
+                    node.removeAttr(attribute);
+                else
+                    node.attr(attribute, url.href);
+            }
+            catch (_c) {
+                node.removeAttr(attribute);
+            }
+        }
+    });
+    return $.root().html() || '';
+}
 var HenNovelTranslations = /** @class */ (function () {
     function HenNovelTranslations() {
         this.id = 'hennoveltranslations';
         this.name = 'Hen Novel Translations';
         this.site = 'https://hennoveltranslations.org';
         this.icon = 'src/en/hennoveltranslations/icon.png';
-        this.version = '1.0.0';
+        this.version = '1.0.1';
     }
-    HenNovelTranslations.prototype.document = function (path) {
+    HenNovelTranslations.prototype.html = function (path) {
         return __awaiter(this, void 0, void 0, function () {
-            var response, _a;
-            return __generator(this, function (_b) {
-                switch (_b.label) {
+            var response;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
                     case 0: return [4 /*yield*/, (0, fetch_1.fetchApi)(this.resolveUrl(path))];
                     case 1:
-                        response = _b.sent();
+                        response = _a.sent();
                         if (!response.ok)
                             throw Object.assign(new Error("Hen Novel Translations: HTTP ".concat(response.status, ".")), {
                                 status: response.status,
                             });
+                        return [2 /*return*/, response.text()];
+                }
+            });
+        });
+    };
+    HenNovelTranslations.prototype.document = function (path) {
+        return __awaiter(this, void 0, void 0, function () {
+            var _a;
+            return __generator(this, function (_b) {
+                switch (_b.label) {
+                    case 0:
                         _a = cheerio_1.load;
-                        return [4 /*yield*/, response.text()];
-                    case 2: return [2 /*return*/, _a.apply(void 0, [_b.sent()])];
+                        return [4 /*yield*/, this.html(path)];
+                    case 1: return [2 /*return*/, _a.apply(void 0, [_b.sent()])];
                 }
             });
         });
@@ -101,13 +150,14 @@ var HenNovelTranslations = /** @class */ (function () {
     };
     HenNovelTranslations.prototype.parseNovel = function (path) {
         return __awaiter(this, void 0, void 0, function () {
-            var $, name, details, field, summary, chapters, seen;
+            var html, $, name, details, field, summary, chapters, seen, list, completeLists, rows, group, declaredTotal;
             var _this = this;
             return __generator(this, function (_a) {
                 switch (_a.label) {
-                    case 0: return [4 /*yield*/, this.document(path)];
+                    case 0: return [4 /*yield*/, this.html(path)];
                     case 1:
-                        $ = _a.sent();
+                        html = _a.sent();
+                        $ = (0, cheerio_1.load)(html);
                         name = $('.single-novel-title h1').text().trim();
                         if (!name)
                             throw new Error('Hen Novel Translations: the novel could not be read.');
@@ -127,26 +177,52 @@ var HenNovelTranslations = /** @class */ (function () {
                         summary.find('h2,.alternate-chapters,p').remove();
                         chapters = [];
                         seen = {};
-                        // The site's episode-list2 is its FREE CHAPTERS list; list1 is paid advance access.
-                        $('.episode-list2 a[href]').each(function (_, element) {
-                            var link = $(element);
+                        list = $('.episode-list2');
+                        completeLists = html.match(/<ul\b[^>]*\bclass\s*=\s*(["'])[^"']*\bepisode-list2\b[^"']*\1[^>]*>[\s\S]*?<\/ul\s*>/gi);
+                        rows = list.children('li');
+                        group = list.closest('.episode-group');
+                        if (list.length !== 1 ||
+                            (completeLists === null || completeLists === void 0 ? void 0 : completeLists.length) !== 1 ||
+                            !rows.length ||
+                            list.find('li').length !== rows.length ||
+                            list.find('a').length !== rows.length ||
+                            group.find('.pagination,a[rel=next],.load-more,[data-next-page]').length)
+                            throw new Error('Hen Novel Translations: the free chapter list is incomplete or has changed.');
+                        declaredTotal = list.attr('data-total');
+                        if (declaredTotal !== undefined && Number(declaredTotal) !== rows.length)
+                            throw new Error('Hen Novel Translations: not all free chapters were returned.');
+                        rows.each(function (_, element) {
+                            var row = $(element);
+                            var link = row.find('a[href]');
+                            if (link.length !== 1 || !link.text().trim())
+                                throw new Error('Hen Novel Translations: a free chapter link is missing.');
                             var url = new URL(_this.resolveUrl(link.attr('href')));
-                            if (!url.pathname.startsWith('/episodes/') || seen[url.pathname])
-                                return;
-                            seen[url.pathname] = true;
+                            var postId = url.searchParams.get('p');
+                            var chapterPath = url.pathname.startsWith('/episodes/')
+                                ? url.pathname
+                                : url.pathname === '/' &&
+                                    url.searchParams.get('post_type') === 'episodes' &&
+                                    postId &&
+                                    /^\d+$/.test(postId) &&
+                                    Number.isSafeInteger(Number(postId)) &&
+                                    Number(postId) > 0
+                                    ? "/?post_type=episodes&p=".concat(Number(postId))
+                                    : undefined;
+                            if (!chapterPath || seen[chapterPath])
+                                throw new Error('Hen Novel Translations: an invalid or repeated free chapter was returned.');
+                            seen[chapterPath] = true;
                             var title = link.text().trim();
                             var number = /(?:episode|chapter)\s+(\d+(?:\.\d+)?)/i.exec(title);
-                            var row = link.closest('li');
                             chapters.push({
                                 name: title,
-                                path: url.pathname,
+                                path: chapterPath,
                                 chapterNumber: number ? Number(number[1]) : undefined,
                                 releaseTime: row.find('time').attr('datetime'),
                             });
                         });
                         chapters.reverse();
-                        if (!chapters.length)
-                            throw new Error('Hen Novel Translations: no free chapter list was found.');
+                        if (chapters.length !== rows.length)
+                            throw new Error('Hen Novel Translations: the free chapter list is incomplete.');
                         return [2 /*return*/, {
                                 name: name,
                                 path: path,
@@ -163,7 +239,7 @@ var HenNovelTranslations = /** @class */ (function () {
     };
     HenNovelTranslations.prototype.parseChapter = function (path) {
         return __awaiter(this, void 0, void 0, function () {
-            var $, body;
+            var $, body, chapter;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0: return [4 /*yield*/, this.document(path)];
@@ -177,9 +253,10 @@ var HenNovelTranslations = /** @class */ (function () {
                             .find('script,style,iframe,form,button,.episode-navigation,.adsbygoogle')
                             .remove();
                         body.find('[style]').removeAttr('style');
-                        if (body.text().trim().length < 200)
+                        chapter = sanitizeChapter(body.html() || '', this.resolveUrl(path));
+                        if ((0, cheerio_1.load)(chapter).text().trim().length < 200)
                             throw new Error('Hen Novel Translations: no readable public chapter was found.');
-                        return [2 /*return*/, body.html()];
+                        return [2 /*return*/, chapter];
                 }
             });
         });

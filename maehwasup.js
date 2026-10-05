@@ -50,13 +50,51 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var fetch_1 = require("@libs/fetch");
 var defaultCover_1 = require("@libs/defaultCover");
 var cheerio_1 = require("cheerio");
+function sanitizeChapter(html, base) {
+    var $ = (0, cheerio_1.load)(html, null, false);
+    $('script,style,iframe,object,embed,svg,math,form,template,noscript').remove();
+    var tags = 'p,div,span,h1,h2,h3,h4,h5,h6,br,hr,strong,em,b,i,u,s,del,small,sub,sup,blockquote,pre,code,ul,ol,li,table,thead,tbody,tfoot,tr,th,td,a,img,ruby,rt,rp'.split(',');
+    $('*').each(function (_, element) {
+        var _a;
+        var node = $(element);
+        var tag = ((_a = node.prop('tagName')) === null || _a === void 0 ? void 0 : _a.toLowerCase()) || '';
+        if (!tags.includes(tag)) {
+            node.replaceWith(node.contents());
+            return;
+        }
+        var allowed = ['title'];
+        if (tag === 'a')
+            allowed.push('href');
+        if (tag === 'img')
+            allowed.push('src', 'alt');
+        for (var _i = 0, _b = Object.keys(node.attr() || {}); _i < _b.length; _i++) {
+            var attribute_1 = _b[_i];
+            if (!allowed.includes(attribute_1))
+                node.removeAttr(attribute_1);
+        }
+        var attribute = tag === 'a' ? 'href' : tag === 'img' ? 'src' : undefined;
+        if (attribute && node.attr(attribute)) {
+            try {
+                var url = new URL(node.attr(attribute), base);
+                if (url.protocol !== 'https:' && url.protocol !== 'http:')
+                    node.removeAttr(attribute);
+                else
+                    node.attr(attribute, url.href);
+            }
+            catch (_c) {
+                node.removeAttr(attribute);
+            }
+        }
+    });
+    return $.root().html() || '';
+}
 var Maehwasup = /** @class */ (function () {
     function Maehwasup() {
         this.id = 'maehwasup';
         this.name = 'Maehwasup';
         this.site = 'https://maehwasup.com';
         this.icon = 'src/en/maehwasup/icon.png';
-        this.version = '1.0.0';
+        this.version = '1.0.1';
     }
     Maehwasup.prototype.request = function (url) {
         return __awaiter(this, void 0, void 0, function () {
@@ -181,7 +219,7 @@ var Maehwasup = /** @class */ (function () {
     };
     Maehwasup.prototype.parseChapter = function (path) {
         return __awaiter(this, void 0, void 0, function () {
-            var $, _a, body;
+            var $, _a, body, chapter;
             return __generator(this, function (_b) {
                 switch (_b.label) {
                     case 0:
@@ -196,9 +234,10 @@ var Maehwasup = /** @class */ (function () {
                             if (/^(Please,?\s+subscribe\/donate|ROTMHS Glossary)/i.test($(element).text().trim()))
                                 $(element).remove();
                         });
-                        if (body.text().trim().length < 200)
+                        chapter = sanitizeChapter(body.html() || '', this.resolveUrl(path));
+                        if ((0, cheerio_1.load)(chapter).text().trim().length < 200)
                             throw new Error('Maehwasup: no readable public chapter was found.');
-                        return [2 /*return*/, body.html()];
+                        return [2 /*return*/, chapter];
                 }
             });
         });
