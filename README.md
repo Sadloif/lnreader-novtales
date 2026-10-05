@@ -1,10 +1,10 @@
 # NovTales for official LNReader — 2.1.0
 
-Use this TypeScript source plugin with NovTales Companion **0.1.3** on the same Android phone. Official LNReader remains the reader and download manager.
+Use this TypeScript source plugin with NovTales Companion **0.1.4** on the same Android phone. Official LNReader remains the reader and download manager.
 
 ## Setup
 
-1. Download and install [NovTales Companion 0.1.3](https://github.com/Sadloif/lnreader-novtales/raw/refs/heads/main/NovTales-Companion-0.1.3.apk), then press **Start**.
+1. Download and install [NovTales Companion 0.1.4](https://github.com/Sadloif/lnreader-novtales/releases/download/companion-v0.1.4/NovTales-Companion-0.1.4.apk), then press **Start**.
 2. Add or refresh your existing LNReader repository:
    `https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/plugins.min.json`
 3. Install/update NovTales to **2.1.0** from this repository.
@@ -20,7 +20,7 @@ The key is a local companion credential, not a NovTales account token. Public ch
 
 ### Show all chapters on one page
 
-Plugin 2.1.0 adds the same kind of setting as NovelFire. Use companion **0.1.3** for the public-novel browsing repair. Updating the companion keeps your pairing key. See [the repair and phone test record](COMPANION_0.1.3.md).
+Plugin 2.1.0 adds the same kind of setting as NovelFire. Use companion **0.1.4** for the new-novel loading repair. Updating the companion keeps your pairing key. See [the repair and phone test record](COMPANION_0.1.4.md).
 
 1. Refresh this repository in LNReader and update the NovTales plugin to **2.1.0**.
 2. Go to **Browse → Plugins**, and tap the **gear beside NovTales**.
@@ -40,8 +40,12 @@ This companion supports **NovTales only**. Other sources keep using their own LN
 
 ## Validation
 
-The 2.1.4 tagged LNReader source supports the text pairing filter. The connected Oppo CPH2825 runs Android 16 and official LNReader 2.1.4. The earlier 0.1.2 release passed a public chapter download and offline reading; see [REVIEW.md](REVIEW.md) for that historical evidence. Companion 0.1.3 passed novel browsing across eight titles; LNReader displayed Barbarian's 961 and Doctor's Rebirth's 1,449 chapter entries on one page. Its fresh chapter-body checks encountered the website's unusual-activity HTTP 429 pause. See [the current phone test record](COMPANION_0.1.3.md) for results and limits.
+The reviewed local LNReader source supports the text pairing filter. The connected Oppo CPH2825 runs Android 16 and installed official LNReader 2.1.4. Companion 0.1.4 passed full novel loading through the compiled plugin on that phone: **Return of the Mount Hua Sect — 1,683 chapter titles**, and **Became a Serpent in the Immortal World — 434**, each returned as one page. Its final build passed 721 native tests, 426 browser adapter tests and Android lint with zero errors. See [the current phone test record](COMPANION_0.1.4.md).
 
-The [companion source ZIP](https://github.com/Sadloif/lnreader-novtales/raw/refs/heads/main/NovTales-Companion-0.1.3-source.zip) contains the current Kotlin companion and plugin 2.1.0, excluding signing secrets. The [plugin 2.1.0 source ZIP](https://github.com/Sadloif/lnreader-novtales/raw/refs/heads/main/NovTales-Plugin-2.1.0-source.zip) contains the new plugin and its tests. See [the 2.1.0 verification record](PLUGIN_2.1.0.md) for the setting and [the companion repair record](COMPANION_0.1.3.md) for its completed phone checks.
+The earlier 0.1.2 release passed a public chapter download and offline reading; see [REVIEW.md](REVIEW.md) for that historical evidence. Companion 0.1.3 displayed Barbarian's 961 and Doctor's Rebirth's 1,449 entries on one page, but its fresh chapter-body checks encountered the website's unusual-activity HTTP 429 pause. Both reported novels also opened with their full chapter lists in official LNReader. A fresh Serpent chapter 1 reading check still received website HTTP 429; this prerelease verifies browsing and chapter-title loading, with no fresh download/offline success claimed. Website verification, reading pauses and paid access still apply.
+
+The [companion source ZIP](https://github.com/Sadloif/lnreader-novtales/releases/download/companion-v0.1.4/NovTales-Companion-0.1.4-source.zip) contains the current Kotlin companion and plugin 2.1.0, excluding signing secrets. The [plugin 2.1.0 source ZIP](https://github.com/Sadloif/lnreader-novtales/raw/refs/heads/main/NovTales-Plugin-2.1.0-source.zip) contains the new plugin and its tests. See [the 2.1.0 verification record](PLUGIN_2.1.0.md) for the setting and [the companion repair record](COMPANION_0.1.4.md) for its phone checks and remaining reading limitation.
 
 
+
+APK and source downloads are grouped in [Companion 0.1.4 releases](https://github.com/Sadloif/lnreader-novtales/releases/tag/companion-v0.1.4). GitHub Packages is not required for this APK/plugin setup.
