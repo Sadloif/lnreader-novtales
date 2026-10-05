@@ -47,7 +47,3 @@ These are desktop live-site checks of the actual compiled plugins. The phone was
 Editable TypeScript is in `plugins/english/`; compiled plugins are in `dist/`. Run `npm install`, then `npm run build` to produce the CommonJS files LNReader installs. For the optional type check, place the official `lnreader/lnreader-plugins` repository with its dependencies alongside this folder; `tsconfig.json` points to its real API types. No dependencies need to be installed on the phone.
 
 The icon images are simple initials drawn for these plugins. Signing keys, browser sessions, downloaded chapter HTML and development captures are not included in the source archive.
-
-## Other source retained in this repository
-
-The older NovTales plugin and its existing releases remain available. Its companion requirement applies only to NovTales; see [the NovTales guide](NOVTALES.md).

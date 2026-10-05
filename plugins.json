@@ -1,11 +1,38 @@
 [
-	{
-		"id": "novtales",
-		"name": "NovTales",
-		"site": "https://novtales.com",
-		"lang": "English",
-		"version": "2.1.0",
-		"url": "https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/novtales.js",
-		"iconUrl": "https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/icon.png"
-	}
+  {
+    "id": "novtales",
+    "name": "NovTales",
+    "site": "https://novtales.com",
+    "lang": "English",
+    "version": "2.1.0",
+    "url": "https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/novtales.js",
+    "iconUrl": "https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/icon.png"
+  },
+  {
+    "id": "maehwasup",
+    "name": "Maehwasup",
+    "site": "https://maehwasup.com",
+    "lang": "English",
+    "version": "1.0.0",
+    "url": "https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/maehwasup.js",
+    "iconUrl": "https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/icons/maehwasup/icon.png"
+  },
+  {
+    "id": "hennoveltranslations",
+    "name": "Hen Novel Translations",
+    "site": "https://hennoveltranslations.org",
+    "lang": "English",
+    "version": "1.0.0",
+    "url": "https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/hennoveltranslations.js",
+    "iconUrl": "https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/icons/hennoveltranslations/icon.png"
+  },
+  {
+    "id": "mylasted",
+    "name": "Machine Editing (MyLasted)",
+    "site": "https://mylasted.blogspot.com",
+    "lang": "English",
+    "version": "1.0.0",
+    "url": "https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/mylasted.js",
+    "iconUrl": "https://raw.githubusercontent.com/Sadloif/lnreader-novtales/main/icons/mylasted/icon.png"
+  }
 ]
